@@ -52,93 +52,92 @@ $(document).ready(function() {
     }
 
     // Lógica para mostrar detalles de venta en modal
-    const saleDetailsModal = new bootstrap.Modal(document.getElementById('saleDetailsModal'));
-    const saleDetailsModalLabel = $('#saleDetailsModalLabel');
-    const saleDetailsModalLoading = $('#saleDetailsModalLoading');
-    const saleDetailsModalContent = $('#saleDetailsModalContent');
-    const saleDetailsProductsTableBody = $('#saleDetailsProductsTable tbody');
-    // Referencias a los spans/divs dentro del modal
-    const modalSaleId = $('#modalSaleId');
-    const modalSaleDate = $('#modalSaleDate');
-    const modalSaleCustomer = $('#modalSaleCustomer');
-    const modalSaleCustomerEmail = $('#modalSaleCustomerEmail'); // Necesitaremos que la API devuelva billing_email
-    const modalSaleStatus = $('#modalSaleStatus');
-    const modalSaleTotal = $('#modalSaleTotal');
-    const modalSalePaymentMethod = $('#modalSalePaymentMethod'); // Necesitaremos que la API devuelva payment_method_title
-    const modalBillingAddress = $('#modalBillingAddress');
-    const modalShippingAddress = $('#modalShippingAddress');
-    const modalCustomerNote = $('#modalCustomerNote');
+    // SOLO si la tabla de ventas existe Y el modal existe, configuramos esta lógica
+    if ($('#salesTable').length) {
+        const saleDetailsModalElement = document.getElementById('saleDetailsModal');
+        console.log("[TVP-POS DEBUG] Intentando encontrar #saleDetailsModal:", saleDetailsModalElement);
 
+        if (saleDetailsModalElement) {
+            const saleDetailsModal = new bootstrap.Modal(saleDetailsModalElement);
+            const saleDetailsModalLabel = $('#saleDetailsModalLabel');
+            const saleDetailsModalLoading = $('#saleDetailsModalLoading');
+            const saleDetailsModalContent = $('#saleDetailsModalContent');
+            const saleDetailsProductsTableBody = $('#saleDetailsProductsTable tbody');
+            // Referencias a los spans/divs dentro del modal
+            const modalSaleId = $('#modalSaleId');
+            const modalSaleDate = $('#modalSaleDate');
+            const modalSaleCustomer = $('#modalSaleCustomer');
+            const modalSaleCustomerEmail = $('#modalSaleCustomerEmail'); // Necesitaremos que la API devuelva billing_email
+            const modalSaleStatus = $('#modalSaleStatus');
+            const modalSaleTotal = $('#modalSaleTotal');
+            const modalSalePaymentMethod = $('#modalSalePaymentMethod'); // Necesitaremos que la API devuelva payment_method_title
+            const modalBillingAddress = $('#modalBillingAddress');
+            const modalShippingAddress = $('#modalShippingAddress');
+            const modalCustomerNote = $('#modalCustomerNote');
 
-    $('#salesTable').on('click', '.view-sale-details-btn', async function() {
-        const orderId = $(this).data('orderId');
-        saleDetailsModalLabel.text(`Detalles de la Venta #${orderId}`);
-        
-        saleDetailsModalLoading.show();
-        saleDetailsModalContent.hide();
-        saleDetailsProductsTableBody.empty();
+            $('#salesTable').on('click', '.view-sale-details-btn', async function() {
+                const orderId = $(this).data('orderId');
+                saleDetailsModalLabel.text(`Detalles de la Venta #${orderId}`);
+                
+                saleDetailsModalLoading.show();
+                saleDetailsModalContent.hide();
+                saleDetailsProductsTableBody.empty();
 
-        saleDetailsModal.show();
-        console.log(`[TVP-POS DEBUG] main.js - view-sale-details-btn - Fetching details for order ID: ${orderId}`);
+                saleDetailsModal.show();
+                console.log(`[TVP-POS DEBUG] main.js - view-sale-details-btn - Fetching details for order ID: ${orderId}`);
 
-        try {
-            const response = await fetch(`/api/sales/${orderId}`); // Usamos el endpoint existente para un solo pedido
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || `Error ${response.status} al cargar detalles de la venta`);
-            }
-            const saleDetails = await response.json();
-            console.log(`[TVP-POS DEBUG] main.js - view-sale-details-btn - Sale details received:`, saleDetails);
+                try {
+                    const response = await fetch(`/api/sales/${orderId}`); // Usamos el endpoint existente para un solo pedido
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.error || `Error ${response.status} al cargar detalles de la venta`);
+                    }
+                    const saleDetails = await response.json();
+                    console.log(`[TVP-POS DEBUG] main.js - view-sale-details-btn - Sale details received:`, saleDetails);
 
-            saleDetailsModalLoading.hide();
+                    saleDetailsModalLoading.hide();
 
-            // Poblar información general
-            modalSaleId.text(saleDetails.id);
-            modalSaleDate.text(new Date(saleDetails.date_created).toLocaleString('es-ES'));
-            modalSaleCustomer.text(saleDetails.customer_name || (saleDetails.customer_id ? `Cliente ID: ${saleDetails.customer_id}` : 'Invitado'));
-            // Asumimos que la API /api/sales/:id devuelve billing_email y payment_method_title
-            // Si no, tvp_pos_get_single_sale_api en el plugin necesita añadirlos.
-            modalSaleCustomerEmail.text(saleDetails.billing_email || '-'); 
-            modalSaleStatus.html(`<span class="badge bg-${getBootstrapStatusColor(saleDetails.status)}">${saleDetails.status ? saleDetails.status.replace('wc-', '') : 'desconocido'}</span>`);
-            modalSaleTotal.text(`${saleDetails.currency || ''} ${parseFloat(saleDetails.total || 0).toFixed(2)}`);
-            modalSalePaymentMethod.text(saleDetails.payment_method_title || saleDetails.payment_method || '-');
+                    // Poblar información general
+                    modalSaleId.text(saleDetails.id);
+                    modalSaleDate.text(new Date(saleDetails.date_created).toLocaleString('es-ES'));
+                    modalSaleCustomer.text(saleDetails.customer_name || (saleDetails.customer_id ? `Cliente ID: ${saleDetails.customer_id}` : 'Invitado'));
+                    modalSaleCustomerEmail.text(saleDetails.billing_email || '-'); 
+                    modalSaleStatus.html(`<span class="badge bg-${getBootstrapStatusColor(saleDetails.status)}">${saleDetails.status ? saleDetails.status.replace('wc-', '') : 'desconocido'}</span>`);
+                    modalSaleTotal.text(`${saleDetails.currency || ''} ${parseFloat(saleDetails.total || 0).toFixed(2)}`);
+                    modalSalePaymentMethod.text(saleDetails.payment_method_title || saleDetails.payment_method || '-');
 
-            // Direcciones
-            modalBillingAddress.html(saleDetails.billing_address ? saleDetails.billing_address.replace(/\n/g, '<br>') : 'No disponible');
-            modalShippingAddress.html(saleDetails.shipping_address ? saleDetails.shipping_address.replace(/\n/g, '<br>') : 'No disponible');
-            
-            // Nota del cliente (asumimos que la API la devuelve como 'customer_note')
-            // tvp_pos_get_single_sale_api necesita añadir $order->get_customer_note()
-            modalCustomerNote.html(saleDetails.customer_note ? saleDetails.customer_note.replace(/\n/g, '<br>') : '<em>Sin notas.</em>');
+                    // Direcciones
+                    modalBillingAddress.html(saleDetails.billing_address ? saleDetails.billing_address.replace(/\n/g, '<br>') : 'No disponible');
+                    modalShippingAddress.html(saleDetails.shipping_address ? saleDetails.shipping_address.replace(/\n/g, '<br>') : 'No disponible');
+                    
+                    modalCustomerNote.html(saleDetails.customer_note ? saleDetails.customer_note.replace(/\n/g, '<br>') : '<em>Sin notas.</em>');
 
+                    // Poblar productos
+                    if (saleDetails.line_items && saleDetails.line_items.length > 0) {
+                        saleDetails.line_items.forEach(item => {
+                            const itemRow = `<tr>
+                                <td>${item.name}</td>
+                                <td>${item.quantity}</td>
+                                <td>Bs.${parseFloat(item.total / item.quantity).toFixed(2)}</td> 
+                                <td>Bs.${parseFloat(item.total).toFixed(2)}</td>
+                            </tr>`;
+                            saleDetailsProductsTableBody.append(itemRow);
+                        });
+                    } else {
+                        saleDetailsProductsTableBody.append('<tr><td colspan="4" class="text-center">No hay productos en este pedido.</td></tr>');
+                    }
 
-            // Poblar productos
-            if (saleDetails.line_items && saleDetails.line_items.length > 0) {
-                saleDetails.line_items.forEach(item => {
-                    const itemRow = `<tr>
-                        <td>${item.name}</td>
-                        <td>${item.quantity}</td>
-                        <td>Bs.${parseFloat(item.total / item.quantity).toFixed(2)}</td> 
-                        <td>Bs.${parseFloat(item.total).toFixed(2)}</td>
-                    </tr>`;
-                    saleDetailsProductsTableBody.append(itemRow);
-                });
-            } else {
-                saleDetailsProductsTableBody.append('<tr><td colspan="4" class="text-center">No hay productos en este pedido.</td></tr>');
-            }
+                    saleDetailsModalContent.show();
 
-            saleDetailsModalContent.show();
-
-        } catch (error) {
-            console.error('Error al obtener detalles de la venta:', error);
-            saleDetailsModalLoading.hide();
-            // Mostrar error dentro del modal
-            const errorHtml = `<div class="alert alert-danger">Error al cargar detalles: ${error.message}</div>`;
-            // Podríamos tener un div específico para errores en el modal. Por ahora, lo ponemos en el content.
-            $('#saleDetailsModalContent').html(errorHtml).show(); 
-        }
-    });
-
+                } catch (error) {
+                    console.error('Error al obtener detalles de la venta:', error);
+                    saleDetailsModalLoading.hide();
+                    const errorHtml = `<div class="alert alert-danger">Error al cargar detalles: ${error.message}</div>`;
+                    $('#saleDetailsModalContent').html(errorHtml).show(); 
+                }
+            });
+        } // Cierre del if (saleDetailsModalElement)
+    } // Cierre del if ($('#salesTable').length)
 
     const cartItemsContainer = $('#cartItems');
     const emptyCartMsg = $('#emptyCartMsg');
@@ -584,11 +583,11 @@ $(document).ready(function() {
                         // buttons += `<button class="btn btn-sm btn-warning edit-user-btn me-1" data-user-id="${row.id}" title="Editar Usuario"><i class="bi bi-pencil-square"></i></button>`;
                         return buttons;
                     }
-                },
-                // Nuevas columnas para historial de compras
-                { data: 'total_orders', title: 'Pedidos', defaultContent: '0' }, // Añadir título aquí si no está en <thead>
-                { data: 'total_revenue', title: 'Total Gastado', defaultContent: '0.00', render: function(data,type,row){ return `Bs.${parseFloat(data || 0).toFixed(2)}`; } },
-                { data: 'avg_order_value', title: 'Prom. Pedido', defaultContent: '0.00', render: function(data,type,row){ return `Bs.${parseFloat(data || 0).toFixed(2)}`; } }
+                }
+                // Se eliminan las 3 columnas de historial de compras para que coincida con el HTML (8 columnas)
+                // { data: 'total_orders', title: 'Pedidos', defaultContent: '0' },
+                // { data: 'total_revenue', title: 'Total Gastado', defaultContent: '0.00', render: function(data,type,row){ return `Bs.${parseFloat(data || 0).toFixed(2)}`; } },
+                // { data: 'avg_order_value', title: 'Prom. Pedido', defaultContent: '0.00', render: function(data,type,row){ return `Bs.${parseFloat(data || 0).toFixed(2)}`; } }
             ],
             language: { 
                 url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json',
@@ -644,64 +643,71 @@ $(document).ready(function() {
     });
 
     // Lógica para mostrar ventas de usuario en modal
-    const userSalesModal = new bootstrap.Modal(document.getElementById('userSalesModal'));
-    const userSalesModalLabel = $('#userSalesModalLabel');
-    const userSalesModalLoading = $('#userSalesModalLoading');
-    const userSalesModalContent = $('#userSalesModalContent');
-    const userSalesTableBody = $('#userSalesTableInModal tbody');
-    const userSalesModalNoSales = $('#userSalesModalNoSales');
-    // const userSalesModalPagination = $('#userSalesModalPagination'); // Para futura paginación
+    if ($('#usersTable').length) { // Condicionar a la existencia de la tabla de usuarios
+        const userSalesModalElement = document.getElementById('userSalesModal');
+        console.log("[TVP-POS DEBUG] Intentando encontrar #userSalesModal:", userSalesModalElement);
 
-    $('#usersTable').on('click', '.view-user-sales-btn', async function() {
-        const userId = $(this).data('userId');
-        const userName = $(this).data('userName') || 'Usuario';
+        if (userSalesModalElement) {
+            const userSalesModal = new bootstrap.Modal(userSalesModalElement);
+            const userSalesModalLabel = $('#userSalesModalLabel');
+            const userSalesModalLoading = $('#userSalesModalLoading');
+            const userSalesModalContent = $('#userSalesModalContent');
+            const userSalesTableBody = $('#userSalesTableInModal tbody');
+            const userSalesModalNoSales = $('#userSalesModalNoSales');
+            // const userSalesModalPagination = $('#userSalesModalPagination'); // Para futura paginación
 
-        userSalesModalLabel.text(`Ventas de ${userName} (ID: ${userId})`);
-        userSalesTableBody.empty(); // Limpiar tabla anterior
-        userSalesModalLoading.show();
-        userSalesModalContent.hide();
-        userSalesModalNoSales.hide();
-        // userSalesModalPagination.empty(); // Limpiar paginación anterior
+            $('#usersTable').on('click', '.view-user-sales-btn', async function() {
+                const userId = $(this).data('userId');
+                const userName = $(this).data('userName') || 'Usuario';
 
-        userSalesModal.show();
-        console.log(`[TVP-POS DEBUG] main.js - view-user-sales-btn - Fetching sales for user ID: ${userId}`);
+                userSalesModalLabel.text(`Ventas de ${userName} (ID: ${userId})`);
+                userSalesTableBody.empty(); // Limpiar tabla anterior
+                userSalesModalLoading.show();
+                userSalesModalContent.hide();
+                userSalesModalNoSales.hide();
+                // userSalesModalPagination.empty(); // Limpiar paginación anterior
 
-        try {
-            // Podríamos añadir parámetros de paginación aquí si el modal lo soporta
-            const response = await fetch(`/api/users/${userId}/sales?per_page=100`); // Obtener hasta 100 ventas
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || `Error ${response.status} al cargar ventas del usuario`);
-            }
-            const salesResult = await response.json();
-            console.log(`[TVP-POS DEBUG] main.js - view-user-sales-btn - Sales data received:`, salesResult);
+                userSalesModal.show();
+                console.log(`[TVP-POS DEBUG] main.js - view-user-sales-btn - Fetching sales for user ID: ${userId}`);
 
-            userSalesModalLoading.hide();
-            if (salesResult.data && salesResult.data.length > 0) {
-                salesResult.data.forEach(sale => {
-                    const saleRow = `<tr>
-                        <td><a href="/wp-admin/admin.php?page=wc-orders&action=edit&id=${sale.id}" target="_blank">#${sale.id}</a></td>
-                        <td>${new Date(sale.date_created).toLocaleDateString()}</td>
-                        <td><span class="badge bg-${getBootstrapStatusColor(sale.status)}">${sale.status}</span></td>
-                        <td>Bs.${parseFloat(sale.total).toFixed(2)}</td>
-                        <td><a href="/wp-admin/admin.php?page=wc-orders&action=edit&id=${sale.id}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> Ver</a></td>
-                    </tr>`;
-                    userSalesTableBody.append(saleRow);
-                });
-                userSalesModalContent.show();
-                // Aquí se podría implementar la lógica de paginación si salesResult incluye totalPages > 1
-            } else {
-                userSalesModalNoSales.show();
-            }
+                try {
+                    // Podríamos añadir parámetros de paginación aquí si el modal lo soporta
+                    const response = await fetch(`/api/users/${userId}/sales?per_page=100`); // Obtener hasta 100 ventas
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.error || `Error ${response.status} al cargar ventas del usuario`);
+                    }
+                    const salesResult = await response.json();
+                    console.log(`[TVP-POS DEBUG] main.js - view-user-sales-btn - Sales data received:`, salesResult);
 
-        } catch (error) {
-            console.error('Error al obtener ventas del usuario:', error);
-            userSalesModalLoading.hide();
-            userSalesTableBody.html(`<tr><td colspan="5" class="text-center text-danger">Error al cargar las ventas: ${error.message}</td></tr>`);
-            userSalesModalContent.show(); // Mostrar la tabla aunque sea con el error
-            userSalesModalNoSales.hide();
-        }
-    });
+                    userSalesModalLoading.hide();
+                    if (salesResult.data && salesResult.data.length > 0) {
+                        salesResult.data.forEach(sale => {
+                            const saleRow = `<tr>
+                                <td><a href="/wp-admin/admin.php?page=wc-orders&action=edit&id=${sale.id}" target="_blank">#${sale.id}</a></td>
+                                <td>${new Date(sale.date_created).toLocaleDateString()}</td>
+                                <td><span class="badge bg-${getBootstrapStatusColor(sale.status)}">${sale.status}</span></td>
+                                <td>Bs.${parseFloat(sale.total).toFixed(2)}</td>
+                                <td><a href="/wp-admin/admin.php?page=wc-orders&action=edit&id=${sale.id}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> Ver</a></td>
+                            </tr>`;
+                            userSalesTableBody.append(saleRow);
+                        });
+                        userSalesModalContent.show();
+                        // Aquí se podría implementar la lógica de paginación si salesResult incluye totalPages > 1
+                    } else {
+                        userSalesModalNoSales.show();
+                    }
+
+                } catch (error) {
+                    console.error('Error al obtener ventas del usuario:', error);
+                    userSalesModalLoading.hide();
+                    userSalesTableBody.html(`<tr><td colspan="5" class="text-center text-danger">Error al cargar las ventas: ${error.message}</td></tr>`);
+                    userSalesModalContent.show(); // Mostrar la tabla aunque sea con el error
+                    userSalesModalNoSales.hide();
+                }
+            });
+        } // Cierre del if (userSalesModalElement)
+    } // Cierre del if ($('#usersTable').length)
     
     // Helper para colores de estado (puedes expandirlo)
     function getBootstrapStatusColor(status) {

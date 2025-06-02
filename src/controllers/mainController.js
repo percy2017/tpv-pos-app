@@ -463,8 +463,28 @@ import {
     addManualEvent, 
     updateManualEvent, 
     deleteManualEvent,
-    readManualEvents 
+    readManualEvents
+    // getManualEvents // Eliminada esta línea, no existe en el servicio
 } from '../utils/manualEventsService.js';
+
+// Nuevo controlador para obtener solo eventos manuales
+export const apiGetManualEvents = async (req, res) => {
+    try {
+        const { search: searchTerm } = req.query; // Podríamos añadir start/end si es necesario filtrar por fecha aquí
+        let manualEvents = await readManualEvents();
+        if (searchTerm) {
+            const lowerSearchTerm = searchTerm.toLowerCase();
+            manualEvents = manualEvents.filter(event =>
+                (event.title && event.title.toLowerCase().includes(lowerSearchTerm)) ||
+                (event.description && event.description.toLowerCase().includes(lowerSearchTerm))
+            );
+        }
+        res.json(manualEvents);
+    } catch (error) {
+        console.error("API Error al obtener eventos manuales:", error);
+        res.status(500).json({ error: error.message || 'Error al obtener los eventos manuales.' });
+    }
+};
 
 export const apiCreateManualEvent = async (req, res) => {
     try {
@@ -508,25 +528,59 @@ export const apiDeleteManualEvent = async (req, res) => {
         if (!success) {
             return res.status(404).json({ error: 'Evento manual no encontrado para eliminar.' });
         }
-        res.status(204).send(); 
+        res.status(204).send();
     } catch (error) {
         console.error("API Error al eliminar evento manual:", error);
         res.status(500).json({ error: error.message || 'Error al eliminar el evento manual.' });
     }
 };
 
+// Nuevo controlador para obtener solo eventos de suscripción de WP
+export const apiGetWPSubscriptionEventsOnly = async (req, res) => {
+    const wpSiteUrl = req.session.wp_site_url;
+    const apiToken = req.session.api_token;
+    const { start, end, search: searchTerm } = req.query;
+
+    // Este controlador SÍ requiere autenticación, que será manejada por el middleware en la ruta
+    // if (!wpSiteUrl || !apiToken) { // Esta verificación ya la hace isAuthenticated
+    //     return res.status(401).json({ error: 'Autenticación requerida.' });
+    // }
+
+    try {
+        const { getWPSubscriptionEvents } = await import('../services/wpApiService.js');
+        let subscriptionEvents = [];
+        console.log("[Node DEBUG mainController] apiGetWPSubscriptionEventsOnly - Intentando obtener eventos de suscripción de WP...");
+        subscriptionEvents = await getWPSubscriptionEvents(wpSiteUrl, apiToken, start, end, searchTerm);
+        console.log(`[Node DEBUG mainController] apiGetWPSubscriptionEventsOnly - Eventos de suscripción de WP recibidos: ${subscriptionEvents ? subscriptionEvents.length : 'null/undefined'}`);
+        if (!Array.isArray(subscriptionEvents)) {
+            console.error("[Node DEBUG mainController] apiGetWPSubscriptionEventsOnly - getWPSubscriptionEvents no devolvió un array. Se usará array vacío.", subscriptionEvents);
+            subscriptionEvents = [];
+        }
+        res.json(subscriptionEvents);
+    } catch (wpError) {
+        console.error("[Node DEBUG mainController] apiGetWPSubscriptionEventsOnly - Error explícito al obtener eventos de suscripción de WP:", wpError.message);
+        // Devolver un array vacío o un error JSON apropiado
+        res.status(500).json({ error: 'Error al obtener eventos de suscripción de WordPress.', details: wpError.message, data: [] });
+    }
+};
+
+// Controlador original apiGetCalendarEvents - podría ser deprecado o modificado si ya no se usa directamente
 export const apiGetCalendarEvents = async (req, res) => {
     const wpSiteUrl = req.session.wp_site_url;
     const apiToken = req.session.api_token;
     const { start, end, search: searchTerm } = req.query; 
 
+    console.log(`[Node DEBUG mainController] apiGetCalendarEvents - Solicitud recibida. Start: ${start}, End: ${end}, Search: ${searchTerm}`);
+
     if (!wpSiteUrl || !apiToken) {
+        console.error("[Node DEBUG mainController] apiGetCalendarEvents - Error: Autenticación requerida (falta wpSiteUrl o apiToken en sesión).");
         return res.status(401).json({ error: 'Autenticación requerida.' });
     }
 
     try {
         const { getWPSubscriptionEvents } = await import('../services/wpApiService.js');
         let manualEvents = await readManualEvents(); 
+        console.log(`[Node DEBUG mainController] apiGetCalendarEvents - Eventos manuales leídos: ${manualEvents.length}`);
         
         if (searchTerm) {
             const lowerSearchTerm = searchTerm.toLowerCase();
@@ -534,21 +588,33 @@ export const apiGetCalendarEvents = async (req, res) => {
                 (event.title && event.title.toLowerCase().includes(lowerSearchTerm)) ||
                 (event.description && event.description.toLowerCase().includes(lowerSearchTerm))
             );
+            console.log(`[Node DEBUG mainController] apiGetCalendarEvents - Eventos manuales después de filtrar por "${searchTerm}": ${manualEvents.length}`);
         }
         
         let subscriptionEvents = [];
         try {
+            console.log("[Node DEBUG mainController] apiGetCalendarEvents - Intentando obtener eventos de suscripción de WP...");
             subscriptionEvents = await getWPSubscriptionEvents(wpSiteUrl, apiToken, start, end, searchTerm);
-        } catch (wpError) {
-            console.error("Error al obtener eventos de suscripción de WP para el calendario:", wpError.message);
+            console.log(`[Node DEBUG mainController] apiGetCalendarEvents - Eventos de suscripción de WP recibidos: ${subscriptionEvents ? subscriptionEvents.length : 'null/undefined'}`);
+            if (!Array.isArray(subscriptionEvents)) { // Asegurar que sea un array
+                console.error("[Node DEBUG mainController] apiGetCalendarEvents - getWPSubscriptionEvents no devolvió un array. Se usará array vacío.", subscriptionEvents);
+                subscriptionEvents = [];
+            }
+        } catch (wpError) { // Este catch podría no alcanzarse si getWPSubscriptionEvents ya maneja y devuelve []
+            console.error("[Node DEBUG mainController] apiGetCalendarEvents - Error explícito al obtener eventos de suscripción de WP:", wpError.message);
+            subscriptionEvents = []; // Asegurar que sea un array vacío en caso de error aquí
         }
         
         const allEvents = [...manualEvents, ...subscriptionEvents];
-        res.json(allEvents);
+        console.log(`[Node DEBUG mainController] apiGetCalendarEvents - Total de eventos combinados a enviar: ${allEvents.length}`);
+        return res.json(allEvents); // Asegurar que se retorna aquí
 
-    } catch (error) {
-        console.error("API Error al obtener eventos del calendario combinados:", error);
-        res.status(500).json({ error: 'Error al obtener los eventos del calendario.' });
+    } catch (error) { // Catch general
+        console.error("[Node DEBUG mainController] apiGetCalendarEvents - Error FATAL al obtener eventos del calendario combinados:", error.message, error.stack);
+        // Asegurarse de que incluso en un error inesperado, se envíe JSON
+        if (!res.headersSent) {
+            return res.status(500).json({ error: 'Error interno del servidor al obtener eventos del calendario.', details: error.message });
+        }
     }
 };
 
@@ -586,6 +652,33 @@ export const apiValidateCoupon = async (req, res) => {
         const errorMessage = error.message || 'Error al validar el cupón.';
         const statusCode = error.statusCode || (error.success === false ? 400 : 500); 
         res.status(statusCode).json({ success: false, message: errorMessage, details: error.details || null });
+    }
+};
+
+export const apiGetSaleById = async (req, res) => {
+    const wpSiteUrl = req.session.wp_site_url;
+    const apiToken = req.session.api_token;
+    const saleId = req.params.id;
+
+    if (!wpSiteUrl || !apiToken) {
+        return res.status(401).json({ error: 'Autenticación requerida.' });
+    }
+    if (!saleId) {
+        return res.status(400).json({ error: 'Se requiere ID de la venta.' });
+    }
+
+    try {
+        const { getWPSaleById } = await import('../services/wpApiService.js');
+        const saleDetails = await getWPSaleById(wpSiteUrl, apiToken, saleId);
+        if (!saleDetails) {
+            return res.status(404).json({ error: 'Venta no encontrada.' });
+        }
+        res.json(saleDetails);
+    } catch (error) {
+        console.error(`API Error al obtener detalles de la venta ${saleId}:`, error.message, error.response?.data);
+        const statusCode = error.response?.status || 500;
+        const errorMessage = error.response?.data?.message || `Error al obtener detalles de la venta ${saleId}.`;
+        res.status(statusCode).json({ error: errorMessage });
     }
 };
 

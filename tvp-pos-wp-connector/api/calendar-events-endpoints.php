@@ -18,130 +18,147 @@ function tvp_pos_register_calendar_events_api_routes() {
         'callback'            => 'tvp_pos_get_subscription_events_api',
         'permission_callback' => '__return_true', // Validación de token dentro del callback
         'args'                => array(
-            // Podríamos añadir 'start' y 'end' si FullCalendar los envía para filtrar por rango
-            // 'start_date' => array('type' => 'string', 'format' => 'date'),
-            // 'end_date'   => array('type' => 'string', 'format' => 'date'),
             'search' => array(
                 'description'       => 'Término de búsqueda para eventos de suscripción.',
                 'type'              => 'string',
                 'sanitize_callback' => 'sanitize_text_field',
+            ),
+            // Parámetros start_date y end_date para el rango del calendario
+            'start_date' => array(
+                'description'       => 'Fecha de inicio del rango del calendario (YYYY-MM-DD).',
+                'type'              => 'string',
+                'sanitize_callback' => 'sanitize_text_field', // Podría necesitar validación de formato de fecha
+            ),
+            'end_date'   => array(
+                'description'       => 'Fecha de fin del rango del calendario (YYYY-MM-DD).',
+                'type'              => 'string',
+                'sanitize_callback' => 'sanitize_text_field', // Podría necesitar validación de formato de fecha
             ),
         ),
     ) );
 }
 
 /**
- * Callback para obtener eventos de vencimiento de suscripciones desde pedidos de WooCommerce.
+ * Callback para obtener eventos de vencimiento de suscripciones desde pedidos de WooCommerce,
+ * adaptado para usar wc_get_orders y los meta keys correctos.
  */
 function tvp_pos_get_subscription_events_api( WP_REST_Request $request ) {
+    error_log('[TVP-POS DEBUG] calendar-events-endpoints.php --- INICIO DE tvp_pos_get_subscription_events_api (usando wc_get_orders) ---');
     $token = $request->get_header( 'X-TVP-Token' );
     $user_validation = tvp_pos_validate_token_and_get_user( $token );
 
     if ( ! $user_validation ) {
+        error_log('[TVP-POS DEBUG] calendar-events-endpoints.php - Token inválido o expirado.');
         return new WP_Error( 'rest_invalid_token', __( 'Token inválido o expirado.', 'tvp-pos-wp-connector' ), array( 'status' => 401 ) );
     }
 
-    if ( ! class_exists( 'WooCommerce' ) ) {
-        return new WP_Error( 'woocommerce_not_active', __( 'WooCommerce no está activo.', 'tvp-pos-wp-connector' ), array( 'status' => 500 ) );
+    if ( ! class_exists( 'WooCommerce' ) || ! function_exists('wc_get_orders') ) {
+        error_log('[TVP-POS DEBUG] calendar-events-endpoints.php - WooCommerce no activo o wc_get_orders no existe.');
+        return new WP_Error( 'woocommerce_not_active', __( 'WooCommerce no está activo o la función wc_get_orders no está disponible.', 'tvp-pos-wp-connector' ), array( 'status' => 500 ) );
     }
     
     $params = $request->get_params();
-    $args = array(
-        'post_type'   => 'shop_order',
-        'post_status' => array_keys( wc_get_order_statuses() ), // Considerar todos los estados o filtrar
-        'posts_per_page' => -1, // Obtener todos los relevantes
-        'meta_query'  => array(
-            'relation' => 'AND',
-            array(
-                'key'     => '_tvp_pos_sale', // Asegurar que es una venta del TPV
-                'value'   => 'yes',
-                'compare' => '=',
-            ),
-            array(
-                'key'     => '_sale_type', // Usar el metadato correcto
-                'value'   => 'suscripcion', // 'suscripcion' es lo que guardamos
-                'compare' => '=',
-            ),
-            array(
-                'key'     => '_subscription_expiry', // Usar el metadato correcto
-                'compare' => 'EXISTS', // Asegurar que el metadato exista
-            ),
-            array(
-                'key'     => '_subscription_expiry', // Usar el metadato correcto
-                'value'   => '',
-                'compare' => '!=', // Asegurar que no esté vacío
-            ),
-            // Si se pasan 'start_date' y 'end_date' para filtrar por rango:
-            // (Asegúrate que $request->get_param('start_date') y $request->get_param('end_date') se manejen si se usan)
-            // array(
-            //     'key'     => '_pos_subscription_expiry_date',
-            //     'value'   => $request->get_param('start_date'),
-            //     'compare' => '>=',
-            //     'type'    => 'DATE',
-            // ),
-            // array(
-            //     'key'     => '_pos_subscription_expiry_date',
-            //     'value'   => $request->get_param('end_date'),
-            //     'compare' => '<=',
-            //     'type'    => 'DATE',
-            // ),
-        ),
-    );
-
-    if ( ! empty( $params['search'] ) ) {
-        // WP_Query con 's' busca en título y contenido del post (pedido).
-        // Para buscar en metadatos del cliente (nombre, email) asociados al pedido,
-        // se necesitaría una consulta más compleja o buscar IDs de cliente primero.
-        // Por ahora, una búsqueda simple en el contenido del pedido.
-        $args['s'] = sanitize_text_field( $params['search'] );
-    }
-    
-    error_log('TVP-POS DEBUG: Args para WP_Query (subscription-events): ' . print_r($args, true));
-    $orders_query = new WP_Query( $args );
     $events = array();
 
-    if ( $orders_query->have_posts() ) {
-        while ( $orders_query->have_posts() ) {
-            $orders_query->the_post();
-            $order_id = get_the_ID();
+    $order_args = array(
+        'status'      => array('wc-processing', 'wc-completed', 'wc-on-hold'), // Incluir prefijos wc-
+        'limit'       => -1, // Obtener todos
+        'meta_query'  => array(
+            'relation' => 'AND',
+            array( 'key' => '_tvp_pos_sale', 'value' => 'yes', 'compare' => '=' ),
+            array( 'key' => '_sale_type', 'value' => 'suscripcion', 'compare' => '=' ),
+            array( 'key' => '_subscription_expiry', 'compare' => 'EXISTS' ),
+            array( 'key' => '_subscription_expiry', 'value' => '', 'compare' => '!=' ),
+        ),
+        'orderby'     => 'meta_value', 
+        'meta_key'    => '_subscription_expiry', // Ordenar por la fecha de expiración
+        'order'       => 'ASC',
+        'return'      => 'ids', 
+    );
+    
+    // Filtrado por rango de fechas si se proporcionan start_date y end_date
+    // FullCalendar envía las fechas en formato ISO8601, ej: 2025-06-01T00:00:00-04:00
+    // Necesitamos solo la parte de la fecha YYYY-MM-DD para la meta_query de WP
+    if ( ! empty( $params['start_date'] ) && preg_match('/^(\d{4}-\d{2}-\d{2})/', $params['start_date'], $start_matches) ) {
+        $order_args['meta_query'][] = array(
+            'key'     => '_subscription_expiry',
+            'value'   => $start_matches[1],
+            'compare' => '>=',
+            'type'    => 'DATE',
+        );
+    }
+    if ( ! empty( $params['end_date'] ) && preg_match('/^(\d{4}-\d{2}-\d{2})/', $params['end_date'], $end_matches) ) {
+         $order_args['meta_query'][] = array(
+            'key'     => '_subscription_expiry',
+            'value'   => $end_matches[1],
+            'compare' => '<=', // FullCalendar envía el 'end' como exclusivo, pero para 'DATE' compare '<=' es más simple
+            'type'    => 'DATE',
+        );
+    }
+    
+    // Manejo de búsqueda (simplificado por ahora, wc_get_orders no tiene un 's' tan flexible como WP_Query)
+    // Si se necesita búsqueda avanzada, se podría hacer un pre-filtrado de clientes o productos
+    // y luego pasar esos IDs a 'customer' o 'post__in' en $order_args.
+    // if ( ! empty( $params['search'] ) ) {
+    //     // Esta es una limitación, wc_get_orders no tiene un parámetro 's' simple.
+    //     // Se podría intentar buscar por ID de pedido si es numérico.
+    // }
+
+    error_log('[TVP-POS DEBUG] Args para wc_get_orders (subscription-events): ' . print_r($order_args, true));
+    $order_ids = wc_get_orders( $order_args );
+    error_log('[TVP-POS DEBUG] Resultado de wc_get_orders (IDs): ' . print_r($order_ids, true) . ' - Cantidad: ' . count($order_ids));
+
+    if ( ! empty( $order_ids ) ) {
+        foreach ( $order_ids as $order_id ) {
             $order = wc_get_order( $order_id );
+            if ( ! $order ) {
+                error_log('[TVP-POS DEBUG] No se pudo obtener el objeto WC_Order para el ID: ' . $order_id);
+                continue;
+            }
 
-            if ( $order ) {
-                $expiry_date = $order->get_meta( '_subscription_expiry' ); // Usar el metadato correcto
-                $subscription_title = $order->get_meta( '_subscription_title' );
-                $customer_name = $order->get_formatted_billing_full_name();
-                
-                $event_title = $subscription_title ? esc_html($subscription_title) : sprintf( __( 'Vence Suscripción Cliente: %s', 'tvp-pos-wp-connector' ), $customer_name );
-                $event_title .= sprintf( ' (Pedido #%d)', $order_id);
-
-
-                if ( $expiry_date ) { // Asegurarse que la fecha exista y no esté vacía
-                    // Validar formato de fecha YYYY-MM-DD
-                    if ( ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiry_date) ) {
-                        error_log('[TVP-POS DEBUG] calendar-events-endpoints.php - Fecha de vencimiento inválida para pedido #' . $order_id . ': ' . $expiry_date);
-                        continue; // Saltar este evento si la fecha no es válida
-                    }
-
-                    $events[] = array(
-                        'id'    => 'wp_sub_' . $order_id, // ID único para el evento
-                        'title' => $event_title,
-                        'start' => $expiry_date, // Debe estar en formato YYYY-MM-DD
-                        'allDay'=> true, 
-                        'color' => '#3a87ad', 
-                        'extendedProps' => array( 
-                            'type' => 'subscription_expiry',
-                            'order_id' => $order_id,
-                            'customer_name' => $customer_name,
-                            'subscription_title' => $subscription_title, // Añadir para más contexto si se hace clic
-                            'order_url' => admin_url( 'post.php?post=' . $order_id . '&action=edit' )
-                        )
-                    );
+            $expiry_date = $order->get_meta( '_subscription_expiry' );
+            $subscription_title = $order->get_meta( '_subscription_title' );
+            // Para el nombre del cliente, usar get_billing_first_name y get_billing_last_name si están disponibles
+            $customer_name = trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name());
+            if (empty($customer_name) && $order->get_customer_id()) {
+                $customer = get_user_by('id', $order->get_customer_id());
+                if ($customer) {
+                    $customer_name = $customer->display_name;
                 }
             }
-        }
-        wp_reset_postdata();
-    }
+            if (empty($customer_name)) {
+                $customer_name = 'Cliente ID ' . $order->get_customer_id();
+            }
+            
+            error_log('[TVP-POS DEBUG] Procesando Pedido ID: ' . $order_id . ' - Título Sub: "' . $subscription_title . '", Fecha Exp: "' . $expiry_date . '"');
 
+            $event_title = $subscription_title ? esc_html($subscription_title) : sprintf( __( 'Vence Suscripción: %s', 'tvp-pos-wp-connector' ), $customer_name );
+            $event_title .= sprintf( ' (Pedido #%d)', $order_id);
+
+            if ( $expiry_date && preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiry_date) ) {
+                $events[] = array(
+                    'id'    => 'wp_sub_' . $order_id,
+                    'title' => $event_title,
+                    'start' => $expiry_date,
+                    'allDay'=> true, 
+                    'color' => $order->get_meta('_pos_subscription_color') ?: '#3a87ad', // Usar color guardado o default
+                    'extendedProps' => array( 
+                        'type' => 'subscription_expiry',
+                        'order_id' => $order_id,
+                        'customer_name' => $customer_name,
+                        'subscription_title' => $subscription_title,
+                        'order_url' => $order->get_edit_order_url()
+                    )
+                );
+            } else {
+                error_log('[TVP-POS DEBUG] Fecha de vencimiento inválida o vacía para pedido #' . $order_id . ': "' . $expiry_date . '". Se omite evento.');
+            }
+        }
+    } else {
+         error_log('[TVP-POS DEBUG] No se encontraron pedidos de suscripción con wc_get_orders usando los criterios.');
+    }
+    
+    error_log('[TVP-POS DEBUG] Total de eventos de suscripción procesados: ' . count($events));
     return new WP_REST_Response( $events, 200 );
 }
 ?>

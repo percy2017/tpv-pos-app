@@ -289,30 +289,36 @@ function tvp_pos_get_users_api( WP_REST_Request $request ) {
                 'user_nicename',
                 'user_email',
                 'display_name',
+                // Añadimos first_name y last_name a los campos de búsqueda principales si es posible,
+                // o confiamos en que el search *term* buscará en ellos si están en display_name.
+                // WP_User_Query busca en 'user_login', 'user_email', 'user_url', 'user_nicename', 'display_name'.
+                // Para buscar en first_name y last_name directamente con el parámetro 'search',
+                // se necesitaría un filtro en 'pre_user_query' para modificar el SQL.
+                // Por ahora, simplificamos y eliminamos la meta_query conflictiva para la búsqueda general.
             );
-            $args['meta_query'] = array(
-                'relation' => 'OR',
-                array(
-                    'key'     => 'first_name',
-                    'value'   => $search_term,
-                    'compare' => 'LIKE'
-                ),
-                array(
-                    'key'     => 'last_name',
-                    'value'   => $search_term,
-                    'compare' => 'LIKE'
-                ),
-                array(
-                    'key'     => 'billing_phone', // Mantenemos como fallback si la búsqueda general incluye números
-                    'value'   => $search_term,
-                    'compare' => 'LIKE'
-                ),
-            );
+            // $args['meta_query'] = array( // Eliminamos esta meta_query para la búsqueda general para evitar el AND restrictivo.
+            //     'relation' => 'OR',
+            //     array(
+            //         'key'     => 'first_name',
+            //         'value'   => $search_term,
+            //         'compare' => 'LIKE'
+            //     ),
+            //     array(
+            //         'key'     => 'last_name',
+            //         'value'   => $search_term,
+            //         'compare' => 'LIKE'
+            //     ),
+            //     array(
+            //         'key'     => 'billing_phone', 
+            //         'value'   => $search_term,
+            //         'compare' => 'LIKE'
+            //     ),
+            // );
         }
     }
     // --- FIN: LÓGICA CONDICIONAL DE BÚSQUEDA ---
     
-    error_log('[TVP-POS DEBUG] Args para WP_User_Query (con nueva lógica): ' . print_r($args, true));
+    error_log('[TVP-POS DEBUG] Args para WP_User_Query (modificada para búsqueda general más simple): ' . print_r($args, true));
     $users_query = new WP_User_Query( $args );
     $users = $users_query->get_results();
     $total_users = $users_query->get_total();

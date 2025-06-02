@@ -20,18 +20,33 @@ router.get('/api/customers/:id', isAuthenticated, mainController.apiGetCustomerB
 router.delete('/api/users/:id', isAuthenticated, mainController.apiDeleteUser); // Eliminar usuario/cliente
 router.post('/api/users/dt', isAuthenticated, mainController.apiGetUsersForDataTable); // Para DataTables server-side
 router.get('/api/users/:id/sales', isAuthenticated, mainController.apiGetUserSales); // Obtener ventas de un usuario específico
+
+// API endpoints para Ventas
 router.post('/api/sales/dt', isAuthenticated, mainController.apiGetSalesForDataTable); // Para DataTables server-side (Ventas)
+router.get('/api/sales/:id', isAuthenticated, mainController.apiGetSaleById); // Obtener una venta específica por ID
 
-// API endpoints para eventos manuales del calendario
-router.post('/api/manual-events', isAuthenticated, mainController.apiCreateManualEvent);
-router.put('/api/manual-events/:id', isAuthenticated, mainController.apiUpdateManualEvent);
-router.delete('/api/manual-events/:id', isAuthenticated, mainController.apiDeleteManualEvent);
-// GET /api/manual-events (para listar todos) podría añadirse si es necesario directamente.
+// API endpoints para eventos manuales del calendario (locales, sin autenticación para CRUD)
+router.post('/api/manual-events', mainController.apiCreateManualEvent); // Sin isAuthenticated
+router.get('/api/manual-events', mainController.apiGetManualEvents);    // Sin isAuthenticated - Nueva ruta para listar solo manuales
+router.put('/api/manual-events/:id', mainController.apiUpdateManualEvent); // Sin isAuthenticated
+router.delete('/api/manual-events/:id', mainController.apiDeleteManualEvent); // Sin isAuthenticated
 
-// API endpoint para obtener todos los eventos del calendario (combinados)
-router.get('/api/calendar-events', isAuthenticated, mainController.apiGetCalendarEvents);
+// API endpoint para obtener solo eventos de suscripción de WP (requiere autenticación)
+router.get('/api/wp-subscription-events', isAuthenticated, mainController.apiGetWPSubscriptionEventsOnly);
 
-// Ruta para la vista del calendario
+// Middleware de logging específico para rutas de calendario (si aún es útil o para las nuevas)
+// router.use('/api/calendar-events', (req, res, next) => { // Comentado porque la ruta original /api/calendar-events podría eliminarse
+//     console.log(`[Node DEBUG Router] Petición entrante para /api/calendar-events. Método: ${req.method}, URL: ${req.originalUrl}, Sesión User: ${req.session.user ? 'Sí' : 'No'}`);
+//     next();
+// });
+
+// La ruta original GET /api/calendar-events que combinaba todo, ahora es reemplazada por las dos rutas específicas.
+// Si alguna otra parte del sistema la usa, necesitaría ser actualizada o esta ruta mantenida y refactorizada.
+// Por ahora, la comentamos o eliminamos para evitar confusión con las nuevas rutas.
+// router.get('/api/calendar-events', isAuthenticated, mainController.apiGetCalendarEvents);
+
+
+// Ruta para la vista del calendario (esta sí requiere autenticación para ver la página)
 router.get('/calendar', isAuthenticated, mainController.showCalendarView);
 
 // API endpoint para validar cupones

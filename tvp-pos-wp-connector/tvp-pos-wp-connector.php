@@ -36,6 +36,7 @@ require_once TVP_POS_CONNECTOR_PATH . 'api/users-endpoints.php';
 require_once TVP_POS_CONNECTOR_PATH . 'api/products-endpoints.php';
 require_once TVP_POS_CONNECTOR_PATH . 'api/gateways-endpoints.php'; // Pasarelas de pago
 require_once TVP_POS_CONNECTOR_PATH . 'api/coupon-endpoints.php'; // Para los endpoints de cupones
+require_once TVP_POS_CONNECTOR_PATH . 'api/calendar-events-endpoints.php'; // Para los eventos del calendario
 // Podrías añadir más aquí, como:
 // require_once TVP_POS_CONNECTOR_PATH . 'api/customers-endpoints.php';
 

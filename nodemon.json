@@ -1,0 +1,15 @@
+{
+  "watch": ["src/", "app.js"],
+  "ext": "js,json,ejs",
+  "ignore": [
+    "data/*",
+    "node_modules/*",
+    "public/*",
+    "*.zip",
+    "*.md",
+    ".git/*",
+    "tvp-pos-wp-connector/*"
+  ],
+  "verbose": true,
+  "delay": "1000"
+}

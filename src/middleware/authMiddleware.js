@@ -4,9 +4,14 @@ export const isAuthenticated = (req, res, next) => {
         return next();
     }
     // El usuario no está logueado
-    // Guardar la URL original para redirigir después del login
-    req.session.returnTo = req.originalUrl;
-    res.redirect('/login');
+    if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json')) || (req.originalUrl && req.originalUrl.startsWith('/api/'))) {
+        // Si es una solicitud AJAX/API, devolver un error JSON
+        return res.status(401).json({ error: 'No autenticado. Por favor, inicie sesión.' });
+    } else {
+        // Si es una solicitud normal del navegador, guardar la URL original y redirigir
+        req.session.returnTo = req.originalUrl;
+        return res.redirect('/login');
+    }
 };
 
 export const isGuest = (req, res, next) => {

@@ -1,0 +1,30 @@
+version: '3.8' # Especifica la versión de la sintaxis de Docker Compose
+
+services:
+  app:
+    build: . # Construye la imagen usando el Dockerfile en el directorio actual
+    container_name: tvp-pos-app # Nombre opcional para el contenedor
+    ports:
+      - "3001:3000" # Mapea el puerto 3000 del host al puerto 3000 del contenedor (según src/app.js)
+    restart: unless-stopped # Política de reinicio para que el contenedor se reinicie automáticamente
+    environment:
+      - NODE_ENV=production # Establece el entorno a producción
+      - PORT=3000 # Define explícitamente el puerto para el contenedor
+      # IMPORTANTE: Cambia 'tu_super_secreto_aqui' por un valor seguro y único para SESSION_SECRET
+      - SESSION_SECRET=tu_super_secreto_aqui 
+      # Aquí puedes añadir más variables de entorno que tu aplicación necesite, por ejemplo:
+      # - WP_API_URL=https://tu-wordpress.com/wp-json
+      # - WP_API_USER=tu_usuario_api
+      # - WP_API_PASSWORD=tu_contraseña_api
+    volumes:
+      # Mapea el directorio ./data del host al directorio /usr/src/app/data dentro del contenedor
+      # Esto asegura que los datos en manual-events.json (y otros en ./data) persistan.
+      - ./data:/usr/src/app/data
+    # Opcional: Si quieres que los cambios en tu código fuente local se reflejen inmediatamente en el contenedor
+    # durante el desarrollo (no recomendado para producción pura, pero útil si aún estás iterando):
+    #   - ./src:/usr/src/app/src
+    #   - ./public:/usr/src/app/public
+    #   - ./package.json:/usr/src/app/package.json
+    #   - ./package-lock.json:/usr/src/app/package-lock.json
+    #   # Si tienes un archivo .env y quieres usarlo (asegúrate de que no esté en .dockerignore)
+    #   # - ./.env:/usr/src/app/.env

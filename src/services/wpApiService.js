@@ -129,17 +129,25 @@ export const getWPUsers = async (wpSiteUrl, apiToken, page = 1, perPage = 10, ro
  */
 export const getWPSubscriptionEvents = async (wpSiteUrl, apiToken, startDate, endDate, searchTerm) => {
     const apiClient = getApiClient(wpSiteUrl, apiToken);
+    const endpointUrl = `${wpSiteUrl}${process.env.WP_PLUGIN_API_PATH || '/wp-json/tvp-pos-connector/v1'}/subscription-events`;
     try {
         const params = {};
         if (startDate) params.start_date = startDate;
         if (endDate) params.end_date = endDate;
         if (searchTerm) params.search = searchTerm;
         
+        console.log(`[Node DEBUG wpApiService] getWPSubscriptionEvents - Llamando a: ${endpointUrl} con params:`, params, `Token: ${apiToken ? 'Presente' : 'Ausente'}`);
         const response = await apiClient.get('/subscription-events', { params });
+        console.log(`[Node DEBUG wpApiService] getWPSubscriptionEvents - Respuesta de WP API. Status: ${response.status}, Datos:`, JSON.stringify(response.data, null, 2));
         return response.data || [];
     } catch (error) {
-        console.error("Error al obtener eventos de suscripción desde WP API:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        throw error;
+        console.error(`[Node DEBUG wpApiService] getWPSubscriptionEvents - Error al obtener eventos de suscripción desde ${endpointUrl}:`, error.message);
+        if (error.response) {
+            console.error(`[Node DEBUG wpApiService] getWPSubscriptionEvents - Error Status: ${error.response.status}, Error Data:`, JSON.stringify(error.response.data, null, 2));
+        }
+        // No relanzar el error aquí para que apiGetCalendarEvents pueda continuar con eventos manuales si los hay.
+        // Devolver un array vacío en caso de error para que no rompa la concatenación.
+        return []; 
     }
 };
 
@@ -219,15 +227,55 @@ export const searchWPCustomers = async (wpSiteUrl, apiToken, searchTerm = '', pe
             page: page,
             // Podríamos añadir 'role': 'customer' si solo queremos clientes de WooCommerce
         };
+        // LOG NUEVO 1: Antes de la llamada
+        console.log(`[Node DEBUG wpApiService] Intentando buscar clientes en WP. URL base: ${wpSiteUrl}${process.env.WP_PLUGIN_API_PATH || '/wp-json/tvp-pos-connector/v1'}/users, Token: ${apiToken ? 'Presente' : 'Ausente'}, Params:`, params); 
+        
         const response = await apiClient.get('/users', { params });
+        
+        // LOG NUEVO 2: Después de la llamada exitosa
+        console.log('[Node DEBUG wpApiService] Respuesta de WP API para /users. Status:', response.status, 'Datos recibidos:', JSON.stringify(response.data, null, 2)); 
+        
+        // Ajuste para el formato de respuesta del plugin que ahora incluye 'data', 'recordsTotal', 'recordsFiltered'
+        const responseData = response.data || {}; // Asegurar que response.data exista
         return {
-            data: response.data || [],
-            total: parseInt(response.headers['x-wp-total'], 10) || 0,
-            totalPages: parseInt(response.headers['x-wp-totalpages'], 10) || 0
+            data: responseData.data || [], 
+            total: responseData.recordsTotal || parseInt(response.headers['x-wp-total'], 10) || 0,
+            // Calcular totalPages basado en recordsFiltered si está disponible, sino usar el header
+            totalPages: responseData.recordsFiltered && perPage > 0 ? Math.ceil(responseData.recordsFiltered / perPage) : (parseInt(response.headers['x-wp-totalpages'], 10) || 0)
         };
     } catch (error) {
-        console.error("Error al buscar clientes desde WP API:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        // LOG MEJORADO para errores
+        console.error("[Node DEBUG wpApiService] Error al buscar clientes desde WP API:", error.message); 
+        if (error.response) {
+            console.error("[Node DEBUG wpApiService] Error response status:", error.response.status);
+            console.error("[Node DEBUG wpApiService] Error response data:", JSON.stringify(error.response.data, null, 2));
+            // console.error("[Node DEBUG wpApiService] Error response headers:", error.response.headers); // Puede ser muy verboso
+        } else {
+            console.error("[Node DEBUG wpApiService] Error sin objeto response (ej: error de red):", error);
+        }
         throw error;
+    }
+};
+
+/**
+ * Obtiene los detalles de una venta (pedido) específica desde WordPress por su ID.
+ * @param {string} wpSiteUrl
+ * @param {string} apiToken
+ * @param {number|string} orderId - ID del pedido a obtener.
+ * @returns {Promise<object|null>} Datos del pedido o null si no se encuentra.
+ */
+export const getWPSaleById = async (wpSiteUrl, apiToken, orderId) => {
+    const apiClient = getApiClient(wpSiteUrl, apiToken);
+    try {
+        // Asumimos que el endpoint en el plugin será /sales/:id
+        const response = await apiClient.get(`/sales/${orderId}`);
+        return response.data; // El plugin debería devolver el objeto del pedido directamente
+    } catch (error) {
+        console.error(`Error al obtener detalles de la venta ${orderId} desde WP API:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        if (error.response && error.response.status === 404) {
+            return null; // Devolver null si es un 404 para que el controlador lo maneje
+        }
+        throw error; // Re-lanzar otros errores
     }
 };
 

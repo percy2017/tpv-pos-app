@@ -33,14 +33,16 @@ El sistema se compone de dos partes principales:
 *   **Frontend (Aplicación TPV):** HTML, CSS, JavaScript, EJS (Embedded JavaScript templates), Bootstrap 5, DataTables, SweetAlert2, FullCalendar (o similar para el calendario), intl-tel-input.
 *   **Backend (WordPress):** PHP, WordPress API REST, WooCommerce API.
 *   **Base de Datos:** La que utilice WordPress (generalmente MySQL/MariaDB).
-*   **Entorno de Desarrollo Sugerido:** XAMPP (para WordPress), Node.js.
+*   **Contenerización:** Docker, Docker Compose.
+*   **Entorno de Desarrollo Sugerido:** XAMPP (para WordPress), Node.js. Opcionalmente Docker para un entorno de desarrollo más aislado.
 
 ## Requisitos Previos
-*   Node.js (v16 o superior recomendado)
+*   Node.js (v18 o superior recomendado)
 *   NPM (usualmente viene con Node.js)
-*   Un servidor web local con PHP y MySQL (ej. XAMPP, MAMP, LocalWP)
-*   Una instalación de WordPress funcional en el servidor local.
+*   Un servidor web local con PHP y MySQL (ej. XAMPP, MAMP, LocalWP) para el desarrollo del plugin de WordPress.
+*   Una instalación de WordPress funcional.
 *   Plugin WooCommerce instalado y activado en WordPress.
+*   Docker y Docker Compose (recomendado para despliegue y opcional para desarrollo).
 
 ## Instalación y Configuración
 
@@ -57,23 +59,32 @@ La aplicación TPV se encuentra en la raíz de este repositorio.
     npm install
     ```
 3.  **Variables de Entorno:**
-    Crea un archivo `.env` en la raíz del proyecto Node.js con las siguientes variables (ajusta los valores según tu configuración):
+    La aplicación TPV requiere ciertas variables de entorno para funcionar correctamente.
+    *   `PORT`: El puerto en el que correrá la aplicación Node.js (ej. `3000`).
+    *   `SESSION_SECRET`: Un secreto largo y aleatorio para asegurar las sesiones. **Es crucial cambiar el valor por defecto.**
+    *   `NODE_ENV`: Se recomienda `production` para despliegues.
+
+    Si no usas Docker, puedes crear un archivo `.env` en la raíz del proyecto Node.js:
     ```env
     PORT=3000
-    SESSION_SECRET=tu_secreto_de_sesion_muy_seguro
-    # Opcional: Si el path de la API del plugin es diferente al default
-    # WP_PLUGIN_API_PATH=/wp-json/tvp-pos-connector/v1 
+    SESSION_SECRET=tu_secreto_de_sesion_muy_seguro_y_aleatorio
+    NODE_ENV=development
     ```
-4.  **Iniciar el Servidor Node.js:**
-    *   Para desarrollo (con nodemon, si está configurado en `package.json`):
+    Si usas Docker, estas variables se configuran en `docker-compose.yml`.
+
+4.  **Configuración de Nodemon (Desarrollo):**
+    El proyecto incluye un archivo `nodemon.json` configurado para vigilar los archivos relevantes y reiniciar el servidor durante el desarrollo. Ignora la carpeta `data/` para evitar reinicios innecesarios al crear eventos manuales.
+
+5.  **Iniciar el Servidor Node.js (Desarrollo Local sin Docker):**
+    *   Para desarrollo (con nodemon):
         ```bash
         npm run dev
         ```
-    *   Para producción o inicio normal:
+    *   Para producción o inicio normal (sin nodemon):
         ```bash
         npm start
         ```
-    La aplicación TPV debería estar corriendo en `http://localhost:3000` (o el puerto que hayas configurado).
+    La aplicación TPV debería estar corriendo en `http://localhost:3000` (o el puerto configurado).
 
 ### 2. Plugin de WordPress (`tvp-pos-wp-connector`)
 
@@ -99,6 +110,40 @@ La aplicación TPV se encuentra en la raíz de este repositorio.
 
 ### 3. WooCommerce
 *   Asegúrate de que WooCommerce esté instalado, activado y configurado con productos, pasarelas de pago (aunque sea de prueba como "Transferencia Bancaria Directa" o "Pago por Cheque" para empezar), etc.
+*   **Importante para Eventos de Calendario:** Para que los vencimientos de suscripciones aparezcan, los pedidos de WooCommerce deben tener los siguientes metadatos:
+    *   `_tvp_pos_sale` = `yes`
+    *   `_sale_type` = `suscripcion`
+    *   `_subscription_expiry` = `YYYY-MM-DD` (fecha válida y no vacía)
+    *   Y el estado del pedido debe ser uno de los configurados en el plugin (ej. `wc-completed`, `wc-processing`, `wc-on-hold`).
+
+### 4. Usando Docker (Recomendado para Despliegue)
+El proyecto está configurado para ser desplegado fácilmente usando Docker y Docker Compose.
+
+1.  **Requisitos Previos:** Docker y Docker Compose instalados en tu servidor/VPS.
+2.  **Configuración:**
+    *   Asegúrate de que el archivo `docker-compose.yml` esté presente en la raíz del proyecto.
+    *   **MUY IMPORTANTE:** Edita `docker-compose.yml` y cambia el valor de `SESSION_SECRET` por una cadena secreta, larga y aleatoria. No uses el valor por defecto.
+        ```yaml
+        environment:
+          - NODE_ENV=production
+          - PORT=3000 # Puerto interno del contenedor
+          - SESSION_SECRET=tu_nuevo_secreto_super_seguro_aqui
+        ```
+3.  **Construir e Iniciar Contenedores:**
+    Desde la raíz del proyecto, ejecuta:
+    ```bash
+    docker-compose up -d --build
+    ```
+    Esto construirá la imagen de la aplicación Node.js (usando `Dockerfile`) y la iniciará en segundo plano.
+4.  **Acceso:**
+    La aplicación estará disponible en el puerto mapeado en `docker-compose.yml`. Por defecto, es el puerto `3001` del host (ej. `http://tu_ip_del_vps:3001`).
+5.  **Persistencia de Datos:**
+    La carpeta `data/` (que contiene `manual-events.json`) se mapea como un volumen en `docker-compose.yml` a `./data` en el host. Esto asegura que los eventos manuales creados persistan entre reinicios del contenedor.
+6.  **Logs:**
+    Para ver los logs de la aplicación corriendo en Docker:
+    ```bash
+    docker-compose logs -f app
+    ```
 
 ## Uso de la Aplicación
 
@@ -151,9 +196,20 @@ El plugin expone varios endpoints bajo el namespace `tvp-pos-connector/v1`. Algu
 *   `GET /products`: Lista productos de WooCommerce (con paginación, búsqueda, filtros).
 *   `GET /payment-gateways`: Lista las pasarelas de pago activas.
 *   `POST /coupons/validate`: Valida un código de cupón.
-*   `GET /subscription-events`: Obtiene eventos de vencimiento de suscripciones para el calendario.
+*   `GET /subscription-events`: Obtiene eventos de vencimiento de suscripciones para el calendario. (Este endpoint es consumido por la aplicación Node.js).
 
-Todos los endpoints requieren un token `X-TVP-Token` en las cabeceras para la autenticación (excepto `/auth/login`).
+Todos los endpoints del plugin requieren un token `X-TVP-Token` en las cabeceras para la autenticación (excepto `/auth/login`), que es gestionado por la aplicación Node.js.
+
+### API Interna de la Aplicación TPV (Node.js)
+La aplicación Node.js expone su propia API para ser consumida por el frontend (FullCalendar, DataTables, etc.). Algunas rutas relevantes para el calendario son:
+
+*   `GET /api/manual-events`: Obtiene eventos manuales locales (no requiere autenticación de sesión TPV).
+*   `POST /api/manual-events`: Crea un nuevo evento manual (no requiere autenticación de sesión TPV).
+*   `PUT /api/manual-events/:id`: Actualiza un evento manual existente (no requiere autenticación de sesión TPV).
+*   `DELETE /api/manual-events/:id`: Elimina un evento manual (no requiere autenticación de sesión TPV).
+*   `GET /api/wp-subscription-events`: Obtiene eventos de vencimiento de suscripciones desde WordPress (requiere autenticación de sesión TPV).
+
+Otras rutas API internas están protegidas y requieren una sesión TPV activa.
 
 ## Contribuciones
 Este es un proyecto personal. Si deseas contribuir, por favor, abre un issue o un pull request en GitHub.

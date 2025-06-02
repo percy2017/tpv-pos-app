@@ -1,7 +1,7 @@
 <%- include('partials/header', { title: title }) %>
 <%- include('partials/navigation', { title: title }) %>
 
-<main class="container-fluid mt-4">
+<main class="container-fluid">
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span><%= title %></span>
@@ -86,9 +86,8 @@
         const saveManualEventBtn = document.getElementById('saveManualEventBtn');
         const deleteManualEventBtn = document.getElementById('deleteManualEventBtn');
         const manualEventModalLabel = document.getElementById('manualEventModalLabel');
-        const calendarSearchInput = document.getElementById('calendarSearchInput'); // Añadido
+        const calendarSearchInput = document.getElementById('calendarSearchInput');
 
-        // Función Debounce
         function debounce(func, delay) {
             let timeout;
             return function(...args) {
@@ -101,12 +100,12 @@
         const calendar = new FullCalendar.Calendar(calendarEl, {
             themeSystem: 'bootstrap5',
             headerToolbar: {
-                left: 'prev,next today addEventButton', // Botón personalizado
+                left: 'prev,next today addEventButton',
                 center: 'title',
                 right: 'dayGridMonth,timeGridWeek,timeGridDay,listMonth'
             },
-            locale: 'es', // Para idioma español
-            buttonText: { // Textos en español
+            locale: 'es',
+            buttonText: {
                 today:    'Hoy',
                 month:    'Mes',
                 week:     'Semana',
@@ -114,19 +113,52 @@
                 list:     'Lista'
             },
             initialView: 'dayGridMonth',
-            editable: true, // Permitir arrastrar y redimensionar eventos manuales
-            selectable: true, // Permitir seleccionar fechas para crear eventos
-            events: function(fetchInfo, successCallback, failureCallback) {
-                const searchTerm = document.getElementById('calendarSearchInput').value;
-                let url = '/api/calendar-events?start=' + fetchInfo.startStr + '&end=' + fetchInfo.endStr;
-                if (searchTerm) {
-                    url += '&search=' + encodeURIComponent(searchTerm);
+            editable: true, // Permitir arrastrar y soltar eventos manuales
+            selectable: true,
+            eventSources: [
+                {
+                    url: '/api/manual-events', // Carga eventos manuales
+                    method: 'GET',
+                    failure: function(error) {
+                        console.error('[Frontend DEBUG Calendar] Error cargando eventos manuales:', error);
+                        Swal.fire({toast: true, position: 'top-end', icon: 'error', title: 'Error al cargar eventos manuales', showConfirmButton: false, timer: 3000, theme: 'dark'});
+                    },
+                    // Podríamos añadir parámetros de búsqueda si el backend los soporta para esta ruta
+                    extraParams: function() { 
+                        const searchTerm = calendarSearchInput.value;
+                        return searchTerm ? { search: searchTerm } : {};
+                    }
+                },
+                {
+                    url: '/api/wp-subscription-events', // Carga eventos de WP
+                    method: 'GET',
+                    failure: function(errorXHR) { // FullCalendar pasa el XHR o un objeto error
+                        console.error('[Frontend DEBUG Calendar] Error cargando eventos de WP:', errorXHR);
+                        let errorMessage = 'Error al cargar eventos de suscripción de WP.';
+                        // Intentar obtener el mensaje de error del JSON si es una respuesta 401/etc.
+                        if (errorXHR && errorXHR.response && typeof errorXHR.response.json === 'function') {
+                             errorXHR.response.json().then(jsonError => {
+                                if (jsonError && jsonError.error) {
+                                    errorMessage = jsonError.error;
+                                }
+                                Swal.fire({toast: true, position: 'top-end', icon: 'warning', title: errorMessage, showConfirmButton: false, timer: 3500, theme: 'dark'});
+                             }).catch(() => {
+                                Swal.fire({toast: true, position: 'top-end', icon: 'warning', title: errorMessage, showConfirmButton: false, timer: 3500, theme: 'dark'});
+                             });
+                        } else if (errorXHR && errorXHR.message) {
+                            errorMessage = errorXHR.message;
+                            Swal.fire({toast: true, position: 'top-end', icon: 'warning', title: errorMessage, showConfirmButton: false, timer: 3500, theme: 'dark'});
+                        } else {
+                            Swal.fire({toast: true, position: 'top-end', icon: 'warning', title: errorMessage, showConfirmButton: false, timer: 3500, theme: 'dark'});
+                        }
+                    },
+                    extraParams: function() {
+                        const searchTerm = calendarSearchInput.value;
+                        // FullCalendar automáticamente añade start y end. Solo necesitamos añadir search si existe.
+                        return searchTerm ? { search: searchTerm } : {};
+                    }
                 }
-                fetch(url)
-                    .then(response => response.json())
-                    .then(data => successCallback(data))
-                    .catch(error => failureCallback(error));
-            },
+            ],
             customButtons: {
                 addEventButton: {
                     text: 'Añadir Evento',
@@ -135,23 +167,22 @@
                         manualEventIdInput.value = '';
                         manualEventModalLabel.textContent = 'Añadir Evento Manual';
                         deleteManualEventBtn.style.display = 'none';
-                        manualEventAllDayCheckbox.checked = true; // Por defecto día completo
+                        manualEventAllDayCheckbox.checked = true;
                         manualEventModal.show();
                     }
                 }
             },
-            select: function(selectionInfo) { // Al seleccionar un rango de fechas/horas
+            select: function(selectionInfo) {
                 manualEventForm.reset();
                 manualEventIdInput.value = '';
                 manualEventModalLabel.textContent = 'Añadir Evento Manual';
                 deleteManualEventBtn.style.display = 'none';
-                manualEventStartInput.value = selectionInfo.startStr.split('T')[0]; // Formato YYYY-MM-DD
+                manualEventStartInput.value = selectionInfo.startStr.split('T')[0];
                 manualEventEndInput.value = selectionInfo.endStr ? selectionInfo.endStr.split('T')[0] : selectionInfo.startStr.split('T')[0];
                 manualEventAllDayCheckbox.checked = selectionInfo.allDay;
                 manualEventModal.show();
             },
-            eventClick: function(info) { // Al hacer clic en un evento
-                // Solo permitir editar/eliminar eventos manuales (que no empiezan con 'wp_sub_')
+            eventClick: function(info) {
                 if (info.event.id && !info.event.id.startsWith('wp_sub_')) {
                     manualEventModalLabel.textContent = 'Editar Evento Manual';
                     manualEventIdInput.value = info.event.id;
@@ -164,15 +195,16 @@
                     deleteManualEventBtn.style.display = 'inline-block';
                     manualEventModal.show();
                 } else if (info.event.extendedProps && info.event.extendedProps.order_url) {
-                    // Para eventos de suscripción, podríamos mostrar un modal con detalles o ir a la URL del pedido
                     Swal.fire({
                         title: info.event.title,
-                        html: `Cliente: ${info.event.extendedProps.customer_name || 'N/A'}<br>Vence: ${info.event.start.toLocaleDateString()}<br><a href="${info.event.extendedProps.order_url}" target="_blank">Ver Pedido</a>`,
-                        icon: 'info'
+                        html: `Cliente: ${info.event.extendedProps.customer_name || 'N/A'}<br>Vence: ${info.event.start.toLocaleDateString()}<br><a href="${info.event.extendedProps.order_url}" target="_blank" style="color: #0d6efd;">Ver Pedido</a>`,
+                        icon: 'info',
+                        theme: 'dark',
+                        confirmButtonColor: '#0d6efd'
                     });
                 }
             },
-            eventDrop: async function(info) { // Al arrastrar y soltar un evento manual
+            eventDrop: async function(info) {
                 if (info.event.id && !info.event.id.startsWith('wp_sub_')) {
                     const eventData = {
                         title: info.event.title,
@@ -188,25 +220,35 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(eventData)
                         });
-                        if (!response.ok) throw new Error('Error al actualizar evento');
+                        if (!response.ok) {
+                            const contentType = response.headers.get("content-type");
+                            if (contentType && contentType.indexOf("application/json") !== -1) {
+                                const errData = await response.json();
+                                throw new Error(errData.message || errData.error || `Error ${response.status} al actualizar evento`);
+                            } else {
+                                const textData = await response.text();
+                                console.error('[Frontend DEBUG Calendar] Error non-JSON response data (PUT eventDrop):', textData);
+                                throw new Error(`Error ${response.status} al actualizar evento. Respuesta no es JSON.`);
+                            }
+                        }
+                        // Si es OK, no esperamos JSON necesariamente, puede ser 200 OK o 204 No Content
                         calendar.refetchEvents();
                     } catch (err) {
                         console.error("Error al mover evento:", err);
-                        info.revert(); // Revertir el cambio en el calendario
-                        Swal.fire('Error', 'No se pudo actualizar el evento.', 'error');
+                        info.revert();
+                        Swal.fire({title: 'Error', text: err.message || 'No se pudo actualizar el evento.', icon: 'error', theme: 'dark'});
                     }
                 } else {
-                    info.revert(); // No permitir mover eventos de suscripción de WP
+                    info.revert();
                 }
-            },
-            // eventResize: function(info) { ... similar a eventDrop para actualizar duración ... }
+            }
         });
         calendar.render();
 
         if (calendarSearchInput) {
             const debouncedRefetch = debounce(() => {
                 calendar.refetchEvents();
-            }, 500); // Espera 500ms después de que el usuario deje de escribir
+            }, 500);
             calendarSearchInput.addEventListener('input', debouncedRefetch);
         }
 
@@ -222,7 +264,7 @@
             };
 
             if (!eventData.title || !eventData.start) {
-                Swal.fire('Error', 'Título y Fecha Inicio son obligatorios.', 'error');
+                Swal.fire({title: 'Error', text: 'Título y Fecha Inicio son obligatorios.', icon: 'error', theme: 'dark'});
                 return;
             }
 
@@ -237,15 +279,24 @@
                     body: JSON.stringify(eventData)
                 });
                 if (!response.ok) {
-                    const errData = await response.json().catch(() => ({ error: `Error ${response.status}` })); // Asegurar que errData.error exista
-                    throw new Error(errData.error || `Error ${response.status}`);
+                    const contentType = response.headers.get("content-type");
+                    if (contentType && contentType.indexOf("application/json") !== -1) {
+                        const errData = await response.json();
+                        throw new Error(errData.message || errData.error || `Error ${response.status} al guardar evento`);
+                    } else {
+                        const textData = await response.text();
+                        console.error('[Frontend DEBUG Calendar] Error non-JSON response data (saveManualEventBtn):', textData);
+                        throw new Error(`Error ${response.status} al guardar evento. Respuesta no es JSON.`);
+                    }
                 }
+                // Si es OK (200 o 201), puede que no devuelva JSON o devuelva el objeto creado/actualizado.
+                // Si devuelve JSON, response.json() podría usarse aquí si fuera necesario.
                 calendar.refetchEvents();
                 manualEventModal.hide();
-                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: `Evento ${id ? 'actualizado' : 'creado'}`, showConfirmButton: false, timer: 2000 });
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: `Evento ${id ? 'actualizado' : 'creado'}`, showConfirmButton: false, timer: 2000, theme: 'dark' });
             } catch (err) {
                 console.error("Error al guardar evento manual:", err);
-                Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: err.message || 'Error al guardar', showConfirmButton: false, timer: 3000 });
+                Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: err.message || 'Error al guardar', showConfirmButton: false, timer: 3000, theme: 'dark' });
             } finally {
                 saveManualEventBtn.disabled = false;
             }
@@ -261,24 +312,32 @@
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
-                cancelButtonColor: '#3085d6',
+                cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Sí, eliminar',
-                cancelButtonText: 'Cancelar'
+                cancelButtonText: 'Cancelar',
+                theme: 'dark'
             });
 
             if (result.isConfirmed) {
                 try {
                     const response = await fetch(`/api/manual-events/${eventId}`, { method: 'DELETE' });
-                    if (!response.ok && response.status !== 204) { // 204 es éxito sin contenido
-                         const errData = await response.json().catch(() => ({ error: `Error ${response.status}` }));
-                         throw new Error(errData.error || `Error ${response.status}`);
+                    if (!response.ok && response.status !== 204) { // 204 No Content es una respuesta OK para DELETE sin cuerpo
+                        const contentType = response.headers.get("content-type");
+                        if (contentType && contentType.indexOf("application/json") !== -1) {
+                            const errData = await response.json();
+                            throw new Error(errData.message || errData.error || `Error ${response.status} al eliminar evento`);
+                        } else {
+                            const textData = await response.text();
+                            console.error('[Frontend DEBUG Calendar] Error non-JSON response data (deleteManualEventBtn):', textData);
+                            throw new Error(`Error ${response.status} al eliminar evento. Respuesta no es JSON.`);
+                        }
                     }
                     calendar.refetchEvents();
                     manualEventModal.hide();
-                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Evento eliminado', showConfirmButton: false, timer: 2000 });
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Evento eliminado', showConfirmButton: false, timer: 2000, theme: 'dark' });
                 } catch (err) {
                     console.error("Error al eliminar evento:", err);
-                    Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: err.message || 'Error al eliminar', showConfirmButton: false, timer: 3000 });
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: err.message || 'Error al eliminar', showConfirmButton: false, timer: 3000, theme: 'dark' });
                 }
             }
         });
