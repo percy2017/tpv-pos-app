@@ -1,0 +1,267 @@
+<%- include('partials/header', { title: 'TPV' }) %>
+<%- include('partials/navigation', { title: 'TPV' }) %>
+
+<main class="container-fluid">
+    <div class="row">
+        <!-- Columna de Productos (2/3) -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">Productos</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="input-group">
+                            <input type="search" class="form-control" id="productSearch" placeholder="Buscar producto por nombre o SKU..." value="<%= typeof search !== 'undefined' ? search : '' %>">
+                            <!-- El botón de buscar podría eliminarse si se busca al escribir, o mantenerse para búsqueda explícita -->
+                            <button class="btn btn-outline-secondary" type="button" id="productSearchBtn">Buscar</button>
+                        </div>
+                    </div>
+
+                    <div id="productListArea">
+                        <% if (typeof error !== 'undefined' && error) { %>
+                            <div class="alert alert-danger"><%= error %></div>
+                        <% } %>
+                        <% if (typeof products !== 'undefined' && products.length > 0) { %>
+                            <% products.forEach(product => { %>
+                                <div class="card mb-3 product-card">
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-2 text-center d-flex align-items-center justify-content-center">
+                                                <% if (product.image_url) { %>
+                                                    <img src="<%= product.image_url %>" class="card-img-top" alt="<%= product.name %>" style="max-width: 100%; max-height: 80px; width: auto; height: auto; object-fit: contain;">
+                                                <% } else { %>
+                                                    <svg class="bd-placeholder-img card-img-top" width="100%" height="80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Placeholder: <%= product.name %>" preserveAspectRatio="xMidYMid slice" focusable="false"><title><%= product.name %></title><rect width="100%" height="100%" fill="#868e96"></rect><text x="50%" y="50%" fill="#dee2e6" dy=".3em">Imagen</text></svg>
+                                                <% } %>
+                                            </div>
+                                            <div class="col-md-10">
+                                                <h5 class="card-title"><%= product.name %></h5>
+                                                <% if (product.type === 'variable' && product.variations_data && product.variations_data.length > 0) { %>
+                                                    <% 
+                                                        let minPrice = Infinity;
+                                                        product.variations_data.forEach(v => {
+                                                            const price = parseFloat(v.price);
+                                                            if (!isNaN(price) && price < minPrice) {
+                                                                minPrice = price;
+                                                            }
+                                                        });
+                                                    %>
+                                                    <p class="card-text"><small class="text-muted">Desde: <%= isFinite(minPrice) ? minPrice : 'N/A' %></small></p>
+                                                    <ul class="list-group list-group-flush">
+                                                        <% product.variations_data.forEach(variation => { %>
+                                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                                <%= variation.attributes ? Object.values(variation.attributes).join(' - ') : 'Variación' %> - <%= variation.price %>
+                                                                <span>
+                                                                    <span class="badge bg-success me-2">En stock</span>
+                                                                    <button class="btn btn-sm btn-outline-primary add-to-cart-btn" data-product-id="<%= product.id %>" data-variation-id="<%= variation.id %>" data-name="<%= product.name %> (<%= variation.attributes ? Object.values(variation.attributes).join(' - ') : 'Variación' %>)" data-price="<%= variation.price %>">Añadir</button>
+                                                                </span>
+                                                            </li>
+                                                        <% }); %>
+                                                    </ul>
+                                                <% } else { %> <!-- Producto Simple o Variable sin variaciones_data -->
+                                                    <p class="card-text">Precio: <%= product.price %></p>
+                                                    <div class="d-flex justify-content-end align-items-center">
+                                                        <span class="badge bg-success me-2">En stock</span>
+                                                        <button class="btn btn-sm btn-primary add-to-cart-btn" data-product-id="<%= product.id %>" data-name="<%= product.name %>" data-price="<%= product.price %>">Añadir</button>
+                                                    </div>
+                                                <% } %>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <% }); %>
+                        <% } else { %>
+                            <p class="no-products-message">No hay productos para mostrar.</p>
+                        <% } %>
+                    </div> <!-- Cierre de productListArea -->
+                </div> <!-- Cierre de card-body -->
+            </div> <!-- Cierre de card -->
+        </div>
+
+        <!-- Columna de Cliente, Carrito y Pago (1/3) -->
+        <div class="col-lg-4">
+            <!-- Sección Cliente -->
+            <div class="card mb-3" id="customerSection">
+                <div class="card-header">Cliente</div>
+                <div class="card-body">
+                    <div id="customerSearchArea">
+                        <div class="mb-2">
+                            <input type="text" class="form-control form-control-sm" id="customerSearchInput" placeholder="Buscar cliente por nombre, email o teléfono...">
+                        </div>
+                        <div id="customerSearchResults" class="list-group mb-2" style="max-height: 200px; overflow-y: auto;">
+                            <!-- Los resultados de la búsqueda de clientes se insertarán aquí -->
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary w-100" id="addCustomerBtn" type="button" data-bs-toggle="modal" data-bs-target="#customerModal">Añadir Nuevo Cliente</button>
+                    </div>
+                    <div id="selectedCustomerArea" class="d-none">
+                        <!-- La tarjeta del cliente seleccionado se insertará aquí (ej. como en la imagen del usuario) -->
+                        <div class="d-flex align-items-center p-2 border rounded">
+                            <img src="/img/avatar_placeholder.png" alt="Avatar" class="rounded-circle me-2" style="width: 40px; height: 40px;" id="selectedCustomerAvatar">
+                            <div class="flex-grow-1">
+                                <strong id="selectedCustomerName">Nombre Cliente</strong><br>
+                                <small class="text-muted" id="selectedCustomerEmail">email@cliente.com</small>
+                            </div>
+                            <button class="btn btn-sm btn-outline-secondary ms-2" id="editCustomerBtn" type="button" data-bs-toggle="modal" data-bs-target="#customerModal">Editar</button>
+                            <button class="btn btn-sm btn-outline-danger ms-1" id="changeCustomerBtn" type="button">Cambiar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal para Crear/Editar Cliente -->
+            <div class="modal fade" id="customerModal" tabindex="-1" aria-labelledby="customerModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="customerModalLabel">Añadir/Editar Cliente</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="customerForm">
+                                <input type="hidden" id="customerId">
+                                <div class="row">
+                                    <div class="col-md-3 text-center mt-3">
+                                        <img id="customerModalAvatar" src="/img/avatar_placeholder.png" class="rounded-circle img-fluid" alt="Avatar" style="width: 150px; height: 150px; object-fit: cover;">
+                                    </div>
+                                    <div class="col-md-9">
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label for="customerFirstName" class="form-label">Nombre <span class="text-danger">*</span></label>
+                                                <input type="text" class="form-control" id="customerFirstName" required>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label for="customerLastName" class="form-label">Apellido</label>
+                                                <input type="text" class="form-control" id="customerLastName">
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label for="customerEmail" class="form-label">Email <span class="text-danger">*</span></label>
+                                                <input type="email" class="form-control" id="customerEmail" required>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label for="customerPhone" class="form-label">Teléfono</label>
+                                                <input type="tel" class="form-control" id="customerPhone">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <hr>
+                                <!-- <h6 class="modal-subtitle my-3 text-muted">Información de Facturación</h6> -->
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="customerBillingAddress1" class="form-label">Dirección de Facturación <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="customerBillingAddress1">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="customerBillingCountry" class="form-label">País <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="customerBillingCountry" value="Bolivia">
+                                    </div>                                                                
+                                    <div class="col-md-6 mb-3">
+                                        <label for="customerBillingCity" class="form-label">Ciudad <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="customerBillingCity">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="customerBillingState" class="form-label">Estado/Provincia <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="customerBillingState">
+                                    </div>
+                                    <!-- <div class="col-md-4 mb-3">
+                                        <label for="customerBillingPostcode" class="form-label">Código Postal <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="customerBillingPostcode">
+                                    </div> -->
+                                </div>
+                              
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="button" class="btn btn-primary" id="saveCustomerBtn">Guardar Cliente</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sección Carrito -->
+            <div class="card mb-3">
+                <div class="card-header">Carrito</div>
+                <div class="card-body" id="cartItems">
+                    <p class="text-center text-muted" id="emptyCartMsg">El carrito está vacío.</p>
+                    <!-- Los ítems del carrito se agregarán aquí con JS -->
+                </div>
+                <div class="card-footer">
+                    <div class="d-flex justify-content-between">
+                        <strong>Subtotal:</strong>
+                        <span id="cartSubtotal">0.00</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <strong>Total:</strong>
+                        <span id="cartTotal" class="fw-bold">0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sección Pago -->
+            <div class="card">
+                <div class="card-header">Pago</div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <label for="saleDate" class="form-label form-label-sm">Fecha Venta:</label>
+                        <input type="date" class="form-control form-control-sm" id="saleDate" value="<%= new Date().toISOString().split('T')[0] %>">
+                    </div>
+                    <div class="mb-2">
+                        <label for="saleType" class="form-label form-label-sm">Tipo de Venta:</label>
+                        <select class="form-select form-select-sm" id="saleType" name="saleType">
+                            <option value="directa" selected>Venta Directa</option>
+                            <option value="suscripcion">Suscripción</option>
+                        </select>
+                    </div>
+
+                    <!-- Detalles de Suscripción (oculto por defecto) -->
+                    <div id="subscriptionDetailsSection" class="mb-2" style="display: none;">
+                        <div class="mb-2">
+                            <label for="subscriptionTitle" class="form-label form-label-sm">Título Suscripción:</label>
+                            <input type="text" class="form-control form-control-sm" id="subscriptionTitle" name="subscriptionTitle">
+                        </div>
+                        <div class="mb-2">
+                            <label for="subscriptionExpiry" class="form-label form-label-sm">Vencimiento Suscripción:</label>
+                            <input type="date" class="form-control form-control-sm" id="subscriptionExpiry" name="subscriptionExpiry">
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label for="paymentMethod" class="form-label form-label-sm">Método de Pago:</label>
+                        <select class="form-select form-select-sm" id="paymentMethod" name="paymentMethod">
+                            <option value="" selected disabled>-- Selecciona Método de Pago --</option>
+                            <% if (typeof paymentGateways !== 'undefined' && paymentGateways.length > 0) { %>
+                                <% paymentGateways.forEach(gateway => { %>
+                                    <option value="<%= gateway.id %>"><%= gateway.title %></option>
+                                <% }); %>
+                            <% } else { %>
+                                <option value="pos_cash" >Efectivo (Predeterminado)</option> 
+                                <!-- Fallback si no se cargan pasarelas -->
+                            <% } %>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="couponCode" class="form-label form-label-sm">Código de Cupón:</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control" id="couponCode" name="couponCode" placeholder="Ingresar cupón">
+                            <button class="btn btn-outline-secondary" type="button" id="applyCouponBtn">Aplicar</button>
+                        </div>
+                        <div id="couponFeedback" class="form-text small"></div> <!-- Para mensajes de cupón -->
+                    </div>
+                    <div class="mb-3">
+                        <label for="customerNote" class="form-label form-label-sm">Nota para el Cliente:</label>
+                        <textarea class="form-control form-control-sm" id="customerNote" name="customerNote" rows="2" placeholder="Notas adicionales para el cliente..."></textarea>
+                    </div>
+                    <button class="btn btn-success w-100" id="processSaleBtn">Finalizar Venta</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- intl-tel-input JS (CDN) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.21/js/intlTelInput.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.21/js/utils.js"></script> <!-- Opcional, para funcionalidades como getNumber, isValidNumber, etc. -->
+
+<%- include('partials/footer') %>

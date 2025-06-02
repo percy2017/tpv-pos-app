@@ -1,0 +1,288 @@
+<%- include('partials/header', { title: title }) %>
+<%- include('partials/navigation', { title: title }) %>
+
+<main class="container-fluid mt-4">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><%= title %></span>
+            <div class="col-md-4 col-lg-3">
+                 <input type="search" class="form-control form-control-sm" id="calendarSearchInput" placeholder="Buscar eventos...">
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="calendar"></div>
+        </div>
+    </div>
+
+    <!-- Modal para Añadir/Editar Evento Manual -->
+    <div class="modal fade" id="manualEventModal" tabindex="-1" aria-labelledby="manualEventModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="manualEventModalLabel">Añadir Evento Manual</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="manualEventForm">
+                        <input type="hidden" id="manualEventId">
+                        <div class="mb-3">
+                            <label for="manualEventTitle" class="form-label">Título <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="manualEventTitle" required>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="manualEventStart" class="form-label">Fecha Inicio <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" id="manualEventStart" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="manualEventEnd" class="form-label">Fecha Fin</label>
+                                <input type="date" class="form-control" id="manualEventEnd">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="manualEventDescription" class="form-label">Descripción</label>
+                            <textarea class="form-control" id="manualEventDescription" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="manualEventColor" class="form-label">Color del Evento</label>
+                            <input type="color" class="form-control form-control-color" id="manualEventColor" value="#3788d8" title="Elige un color para el evento">
+                        </div>
+                         <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="manualEventAllDay" checked>
+                            <label class="form-check-label" for="manualEventAllDay">
+                                Evento de día completo
+                            </label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger me-auto" id="deleteManualEventBtn" style="display: none;">Eliminar</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="saveManualEventBtn">Guardar Evento</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- FullCalendar JS y dependencias (desde CDN) -->
+<script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js'></script>
+<script src='https://cdn.jsdelivr.net/npm/@fullcalendar/bootstrap5@6.1.11/index.global.min.js'></script>
+<!-- Asegúrate que Bootstrap 5 JS esté cargado (generalmente en footer.ejs o similar) -->
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const calendarEl = document.getElementById('calendar');
+        const manualEventModalEl = document.getElementById('manualEventModal');
+        const manualEventModal = new bootstrap.Modal(manualEventModalEl);
+        const manualEventForm = document.getElementById('manualEventForm');
+        const manualEventIdInput = document.getElementById('manualEventId');
+        const manualEventTitleInput = document.getElementById('manualEventTitle');
+        const manualEventStartInput = document.getElementById('manualEventStart');
+        const manualEventEndInput = document.getElementById('manualEventEnd');
+        const manualEventDescriptionInput = document.getElementById('manualEventDescription');
+        const manualEventColorInput = document.getElementById('manualEventColor');
+        const manualEventAllDayCheckbox = document.getElementById('manualEventAllDay');
+        const saveManualEventBtn = document.getElementById('saveManualEventBtn');
+        const deleteManualEventBtn = document.getElementById('deleteManualEventBtn');
+        const manualEventModalLabel = document.getElementById('manualEventModalLabel');
+        const calendarSearchInput = document.getElementById('calendarSearchInput'); // Añadido
+
+        // Función Debounce
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), delay);
+            };
+        }
+
+        const calendar = new FullCalendar.Calendar(calendarEl, {
+            themeSystem: 'bootstrap5',
+            headerToolbar: {
+                left: 'prev,next today addEventButton', // Botón personalizado
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,timeGridDay,listMonth'
+            },
+            locale: 'es', // Para idioma español
+            buttonText: { // Textos en español
+                today:    'Hoy',
+                month:    'Mes',
+                week:     'Semana',
+                day:      'Día',
+                list:     'Lista'
+            },
+            initialView: 'dayGridMonth',
+            editable: true, // Permitir arrastrar y redimensionar eventos manuales
+            selectable: true, // Permitir seleccionar fechas para crear eventos
+            events: function(fetchInfo, successCallback, failureCallback) {
+                const searchTerm = document.getElementById('calendarSearchInput').value;
+                let url = '/api/calendar-events?start=' + fetchInfo.startStr + '&end=' + fetchInfo.endStr;
+                if (searchTerm) {
+                    url += '&search=' + encodeURIComponent(searchTerm);
+                }
+                fetch(url)
+                    .then(response => response.json())
+                    .then(data => successCallback(data))
+                    .catch(error => failureCallback(error));
+            },
+            customButtons: {
+                addEventButton: {
+                    text: 'Añadir Evento',
+                    click: function() {
+                        manualEventForm.reset();
+                        manualEventIdInput.value = '';
+                        manualEventModalLabel.textContent = 'Añadir Evento Manual';
+                        deleteManualEventBtn.style.display = 'none';
+                        manualEventAllDayCheckbox.checked = true; // Por defecto día completo
+                        manualEventModal.show();
+                    }
+                }
+            },
+            select: function(selectionInfo) { // Al seleccionar un rango de fechas/horas
+                manualEventForm.reset();
+                manualEventIdInput.value = '';
+                manualEventModalLabel.textContent = 'Añadir Evento Manual';
+                deleteManualEventBtn.style.display = 'none';
+                manualEventStartInput.value = selectionInfo.startStr.split('T')[0]; // Formato YYYY-MM-DD
+                manualEventEndInput.value = selectionInfo.endStr ? selectionInfo.endStr.split('T')[0] : selectionInfo.startStr.split('T')[0];
+                manualEventAllDayCheckbox.checked = selectionInfo.allDay;
+                manualEventModal.show();
+            },
+            eventClick: function(info) { // Al hacer clic en un evento
+                // Solo permitir editar/eliminar eventos manuales (que no empiezan con 'wp_sub_')
+                if (info.event.id && !info.event.id.startsWith('wp_sub_')) {
+                    manualEventModalLabel.textContent = 'Editar Evento Manual';
+                    manualEventIdInput.value = info.event.id;
+                    manualEventTitleInput.value = info.event.title;
+                    manualEventStartInput.value = info.event.startStr.split('T')[0];
+                    manualEventEndInput.value = info.event.endStr ? info.event.endStr.split('T')[0] : info.event.startStr.split('T')[0];
+                    manualEventDescriptionInput.value = info.event.extendedProps.description || '';
+                    manualEventColorInput.value = info.event.backgroundColor || '#3788d8';
+                    manualEventAllDayCheckbox.checked = info.event.allDay;
+                    deleteManualEventBtn.style.display = 'inline-block';
+                    manualEventModal.show();
+                } else if (info.event.extendedProps && info.event.extendedProps.order_url) {
+                    // Para eventos de suscripción, podríamos mostrar un modal con detalles o ir a la URL del pedido
+                    Swal.fire({
+                        title: info.event.title,
+                        html: `Cliente: ${info.event.extendedProps.customer_name || 'N/A'}<br>Vence: ${info.event.start.toLocaleDateString()}<br><a href="${info.event.extendedProps.order_url}" target="_blank">Ver Pedido</a>`,
+                        icon: 'info'
+                    });
+                }
+            },
+            eventDrop: async function(info) { // Al arrastrar y soltar un evento manual
+                if (info.event.id && !info.event.id.startsWith('wp_sub_')) {
+                    const eventData = {
+                        title: info.event.title,
+                        start: info.event.startStr.split('T')[0],
+                        end: info.event.endStr ? info.event.endStr.split('T')[0] : info.event.startStr.split('T')[0],
+                        allDay: info.event.allDay,
+                        description: info.event.extendedProps.description,
+                        color: info.event.backgroundColor
+                    };
+                    try {
+                        const response = await fetch(`/api/manual-events/${info.event.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(eventData)
+                        });
+                        if (!response.ok) throw new Error('Error al actualizar evento');
+                        calendar.refetchEvents();
+                    } catch (err) {
+                        console.error("Error al mover evento:", err);
+                        info.revert(); // Revertir el cambio en el calendario
+                        Swal.fire('Error', 'No se pudo actualizar el evento.', 'error');
+                    }
+                } else {
+                    info.revert(); // No permitir mover eventos de suscripción de WP
+                }
+            },
+            // eventResize: function(info) { ... similar a eventDrop para actualizar duración ... }
+        });
+        calendar.render();
+
+        if (calendarSearchInput) {
+            const debouncedRefetch = debounce(() => {
+                calendar.refetchEvents();
+            }, 500); // Espera 500ms después de que el usuario deje de escribir
+            calendarSearchInput.addEventListener('input', debouncedRefetch);
+        }
+
+        saveManualEventBtn.addEventListener('click', async () => {
+            const id = manualEventIdInput.value;
+            const eventData = {
+                title: manualEventTitleInput.value.trim(),
+                start: manualEventStartInput.value,
+                end: manualEventEndInput.value || manualEventStartInput.value,
+                allDay: manualEventAllDayCheckbox.checked,
+                description: manualEventDescriptionInput.value.trim(),
+                color: manualEventColorInput.value
+            };
+
+            if (!eventData.title || !eventData.start) {
+                Swal.fire('Error', 'Título y Fecha Inicio son obligatorios.', 'error');
+                return;
+            }
+
+            const url = id ? `/api/manual-events/${id}` : '/api/manual-events';
+            const method = id ? 'PUT' : 'POST';
+
+            try {
+                saveManualEventBtn.disabled = true;
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(eventData)
+                });
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({ error: `Error ${response.status}` })); // Asegurar que errData.error exista
+                    throw new Error(errData.error || `Error ${response.status}`);
+                }
+                calendar.refetchEvents();
+                manualEventModal.hide();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: `Evento ${id ? 'actualizado' : 'creado'}`, showConfirmButton: false, timer: 2000 });
+            } catch (err) {
+                console.error("Error al guardar evento manual:", err);
+                Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: err.message || 'Error al guardar', showConfirmButton: false, timer: 3000 });
+            } finally {
+                saveManualEventBtn.disabled = false;
+            }
+        });
+
+        deleteManualEventBtn.addEventListener('click', async () => {
+            const eventId = manualEventIdInput.value;
+            if (!eventId) return;
+
+            const result = await Swal.fire({
+                title: '¿Eliminar Evento?',
+                text: "Esta acción no se puede deshacer.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            });
+
+            if (result.isConfirmed) {
+                try {
+                    const response = await fetch(`/api/manual-events/${eventId}`, { method: 'DELETE' });
+                    if (!response.ok && response.status !== 204) { // 204 es éxito sin contenido
+                         const errData = await response.json().catch(() => ({ error: `Error ${response.status}` }));
+                         throw new Error(errData.error || `Error ${response.status}`);
+                    }
+                    calendar.refetchEvents();
+                    manualEventModal.hide();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Evento eliminado', showConfirmButton: false, timer: 2000 });
+                } catch (err) {
+                    console.error("Error al eliminar evento:", err);
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: err.message || 'Error al eliminar', showConfirmButton: false, timer: 3000 });
+                }
+            }
+        });
+    });
+</script>
+
+<%- include('partials/footer') %>

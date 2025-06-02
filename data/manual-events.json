@@ -1,0 +1,38 @@
+[
+  {
+    "id": "7f9650e8-fdd9-40f9-86ba-bdd9a2505a1f",
+    "title": "enveto 01",
+    "start": "2025-04-30",
+    "end": "2025-05-01",
+    "allDay": true,
+    "description": "asdfasdf",
+    "color": "#6fd737"
+  },
+  {
+    "id": "48534d8d-b4c3-4007-ab57-37cf698d21d3",
+    "title": "evento02",
+    "start": "2025-04-30",
+    "end": "2025-05-01",
+    "allDay": true,
+    "description": "asfdasdf",
+    "color": "#3788d8"
+  },
+  {
+    "id": "674a1780-6f5c-4d35-a93d-d8acd0a42e88",
+    "title": "asdfasdf",
+    "start": "2025-05-01",
+    "end": "2025-05-02",
+    "allDay": true,
+    "description": "asdfasdf",
+    "color": "#3788d8"
+  },
+  {
+    "id": "d5822522-518d-4030-9a77-a210c65666f9",
+    "title": "asdfasd",
+    "start": "2025-05-02",
+    "end": "2025-05-03",
+    "allDay": true,
+    "description": "fasdfasdf",
+    "color": "#3788d8"
+  }
+]

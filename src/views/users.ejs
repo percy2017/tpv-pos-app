@@ -1,0 +1,105 @@
+<%- include('partials/header', { title: 'Usuarios' }) %>
+<%- include('partials/navigation', { title: 'Usuarios' }) %>
+
+<main class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Gestión de Usuarios</h2>
+        <button class="btn btn-primary" id="addNewUserBtn">
+            <i class="bi bi-plus-circle"></i> Añadir Nuevo Usuario
+        </button>
+    </div>
+    <hr>
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped table-bordered" id="usersTable" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th style="width: 5%;">Avatar</th>
+                            <th style="width: 5%;">ID</th>
+                            <th>Nombre (Display)</th>
+                            <th>Usuario (Login)</th>
+                            <th>Email</th>
+                            <th style="width: 15%;">Teléfono</th>
+                            <th>Roles</th>
+                            <th style="width: 10%;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% if (typeof users !== 'undefined' && users.length > 0) { %>
+                            <% users.forEach(user => { %>
+                                <tr>
+                                    <td>
+                                        <% if (user.avatar_url) { %>
+                                            <img src="<%= user.avatar_url %>" alt="Avatar de <%= user.display_name %>" class="rounded-circle" style="width: 32px; height: 32px; object-fit: cover;">
+                                        <% } else { %>
+                                            <img src="/img/avatar_placeholder.png" alt="Avatar de <%= user.display_name %>" class="rounded-circle" style="width: 32px; height: 32px; object-fit: cover;">
+                                        <% } %>
+                                    </td>
+                                    <td><%= user.id %></td>
+                                    <td><%= user.display_name %></td>
+                                    <td><%= user.username %></td>
+                                    <td><%= user.email %></td>
+                                    <td><%= user.phone ? user.phone : '-' %></td>
+                                    <td><%= user.roles ? user.roles.join(', ') : 'N/A' %></td>
+                                    <td>
+                                        <!-- <button class="btn btn-sm btn-info" title="Ver Detalles"><i class="bi bi-eye"></i></button>
+                                        <button class="btn btn-sm btn-warning" title="Editar"><i class="bi bi-pencil-square"></i></button> -->
+                                        <button class="btn btn-sm btn-danger delete-user-btn" data-user-id="<%= user.id %>" data-user-name="<%= user.display_name %>" title="Eliminar Usuario"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                </tr>
+                            <% }); %>
+                        <% } else { %>
+                            <tr>
+                                <td colspan="8" class="text-center">No hay usuarios para mostrar.</td>
+                            </tr>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- Modal para Ver Ventas del Usuario -->
+<div class="modal fade" id="userSalesModal" tabindex="-1" aria-labelledby="userSalesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="userSalesModalLabel">Ventas de Usuario</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="userSalesModalLoading" class="text-center">Cargando ventas...</p>
+                <div id="userSalesModalContent" style="display: none;">
+                    <!-- Aquí se insertará la tabla de ventas -->
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped table-bordered" id="userSalesTableInModal">
+                            <thead>
+                                <tr>
+                                    <th>ID Pedido</th>
+                                    <th>Fecha</th>
+                                    <th>Estado</th>
+                                    <th>Total</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Las filas de ventas se insertarán aquí -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="userSalesModalPagination">
+                        <!-- Controles de paginación si se implementan -->
+                    </div>
+                </div>
+                <p id="userSalesModalNoSales" class="text-center" style="display: none;">Este usuario no tiene ventas registradas.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('partials/footer') %>

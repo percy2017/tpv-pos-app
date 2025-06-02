@@ -1,0 +1,173 @@
+/* Estilos personalizados para TVP-POS */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    /* background-color: #f8f9fa; */ /* Eliminado para permitir que el tema de Bootstrap controle el fondo del body */
+}
+
+.navbar {
+    margin-bottom: 1.5rem; /* Espacio debajo de la barra de navegación */
+}
+
+.product-card .card-body {
+    padding: 1rem;
+}
+
+.product-card .list-group-item {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+}
+
+.product-card .badge {
+    font-size: 0.75rem;
+}
+
+#cartItems .list-group-item {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+}
+
+/* Ajustes para que el footer no se superponga con contenido largo */
+body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+main {
+    flex: 1; /* Hace que el main ocupe el espacio disponible */
+    padding-bottom: 70px; /* Espacio para el footer */
+}
+
+.footer {
+    /* position: fixed; */ /* Descomentar si se quiere fijo abajo, pero puede tapar contenido */
+    /* bottom: 0; */
+    /* width: 100%; */
+    background-color: #e9ecef; /* Color para tema claro, sin !important */
+}
+
+/* Estilos para DataTables */
+#salesTable_wrapper .dataTables_length,
+#salesTable_wrapper .dataTables_filter {
+    margin-bottom: 1rem;
+}
+
+/* Ajustes para el Tema Oscuro */
+[data-bs-theme="dark"] body {
+    /* Bootstrap debería manejar esto, pero si no, puedes forzarlo: */
+    /* background-color: var(--bs-dark, #212529); */
+    /* color: var(--bs-light, #f8f9fa); */
+}
+
+[data-bs-theme="dark"] .card {
+    background-color: var(--bs-gray-800, #343a40); /* Un color de card oscuro */
+    color: var(--bs-light-text-emphasis, #dee2e6); /* Texto más claro para contraste */
+    border-color: var(--bs-border-color-translucent, rgba(255, 255, 255, 0.15));
+}
+
+[data-bs-theme="dark"] .card .card-header,
+[data-bs-theme="dark"] .card .card-footer {
+    /* background-color: var(--bs-gray-700, #495057); */ /* Opcional: cabecera/pie un poco diferente */
+    color: var(--bs-light-text-emphasis, #dee2e6);
+    border-bottom-color: var(--bs-border-color-translucent, rgba(255, 255, 255, 0.15));
+    border-top-color: var(--bs-border-color-translucent, rgba(255, 255, 255, 0.15));
+}
+
+
+[data-bs-theme="dark"] .list-group-item {
+    background-color: var(--bs-gray-800, #343a40); /* Mismo que la card o ligeramente diferente */
+    color: var(--bs-light-text-emphasis, #dee2e6);
+    border-color: var(--bs-border-color-translucent, rgba(255, 255, 255, 0.15));
+}
+
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select {
+    background-color: var(--bs-gray-700, #495057);
+    color: var(--bs-light, #f8f9fa);
+    border-color: var(--bs-gray-600, #6c757d);
+}
+
+[data-bs-theme="dark"] .form-control::placeholder {
+    color: var(--bs-gray-500, #adb5bd);
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus {
+    background-color: var(--bs-gray-700, #495057);
+    color: var(--bs-light, #f8f9fa);
+    border-color: var(--bs-primary-border-subtle, #0d6efd); /* O el color de foco que prefieras */
+    box-shadow: 0 0 0 0.25rem rgba(var(--bs-primary-rgb), 0.25); /* Usando variable de Bootstrap para el color del foco */
+}
+
+
+/* Para que los títulos H2, H3, etc., dentro de las cards o el main sean claros en modo oscuro */
+[data-bs-theme="dark"] h1,
+[data-bs-theme="dark"] h2,
+[data-bs-theme="dark"] h3,
+[data-bs-theme="dark"] h4,
+[data-bs-theme="dark"] h5,
+[data-bs-theme="dark"] h6 {
+    color: var(--bs-heading-color, var(--bs-light, #f8f9fa)); /* --bs-heading-color se adapta al tema */
+}
+
+/* Ajustes para DataTables en modo oscuro */
+[data-bs-theme="dark"] .dataTables_wrapper {
+    color: var(--bs-light-text-emphasis, #dee2e6);
+}
+
+[data-bs-theme="dark"] .dataTables_length label,
+[data-bs-theme="dark"] .dataTables_filter label,
+[data-bs-theme="dark"] .dataTables_info {
+    color: var(--bs-light-text-emphasis, #dee2e6) !important; /* !important puede ser necesario por especificidad de DataTables */
+}
+
+[data-bs-theme="dark"] .page-item.disabled .page-link {
+    background-color: var(--bs-gray-700, #495057);
+    border-color: var(--bs-gray-600, #6c757d);
+    color: var(--bs-gray-500, #adb5bd);
+}
+
+[data-bs-theme="dark"] .page-link {
+    background-color: var(--bs-gray-800, #343a40);
+    border-color: var(--bs-gray-600, #6c757d);
+    color: var(--bs-primary, #0d6efd); /* Color del enlace de paginación */
+}
+
+[data-bs-theme="dark"] .page-item.active .page-link {
+    background-color: var(--bs-primary, #0d6efd);
+    border-color: var(--bs-primary, #0d6efd);
+    color: #fff;
+}
+
+[data-bs-theme="dark"] table.dataTable td,
+[data-bs-theme="dark"] table.dataTable th {
+    color: var(--bs-light-text-emphasis, #dee2e6); /* Texto de celdas */
+}
+
+[data-bs-theme="dark"] table.table-striped > tbody > tr:nth-of-type(odd) > * {
+    --bs-table-accent-bg: var(--bs-gray-700, rgba(255,255,255,0.05)); /* Color de las filas alternas */
+     color: var(--bs-light-text-emphasis, #dee2e6);
+}
+[data-bs-theme="dark"] table.table-striped > tbody > tr:nth-of-type(even) > * {
+     color: var(--bs-light-text-emphasis, #dee2e6);
+}
+
+[data-bs-theme="dark"] .table-bordered {
+    border-color: var(--bs-gray-600, #6c757d);
+}
+
+[data-bs-theme="dark"] .footer {
+    background-color: var(--bs-gray-800, #343a40);
+    color: var(--bs-light-text-emphasis, #dee2e6);
+    border-top: 1px solid var(--bs-border-color-translucent, rgba(255, 255, 255, 0.15));
+}
+
+[data-bs-theme="dark"] .bg-light {
+    background-color: var(--bs-gray-800, #343a40) !important; /* Usar un color oscuro para .bg-light en tema oscuro */
+    color: var(--bs-light-text-emphasis, #dee2e6) !important;
+}
+
+/* Si el jumbotron tiene texto específico que no hereda bien el color: */
+[data-bs-theme="dark"] .p-5.mb-4.bg-light.rounded-3 .display-5,
+[data-bs-theme="dark"] .p-5.mb-4.bg-light.rounded-3 .fs-4 {
+    color: var(--bs-light-text-emphasis, #dee2e6);
+}

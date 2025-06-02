@@ -1,0 +1,76 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">TVP-POS</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasNavbar" aria-controls="offcanvasNavbar" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="offcanvas offcanvas-start text-bg-dark" tabindex="-1" id="offcanvasNavbar" aria-labelledby="offcanvasNavbarLabel">
+            <div class="offcanvas-header">
+                <h5 class="offcanvas-title" id="offcanvasNavbarLabel">TVP-POS Menú</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+            </div>
+            <div class="offcanvas-body">
+                <ul class="navbar-nav justify-content-end flex-grow-1 pe-3">
+                    <li class="nav-item">
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Dashboard' ? 'active' : '' %>" aria-current="page" href="/">Inicio</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'TPV' ? 'active' : '' %>" href="/pos">TPV</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Ventas' ? 'active' : '' %>" href="/sales">Ventas</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Usuarios' ? 'active' : '' %>" href="/users">Usuarios</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Calendario de Vencimientos' ? 'active' : '' %>" href="/calendar">Calendario</a>
+                    </li>
+                    <!-- Agrega más elementos de navegación aquí según sea necesario -->
+                    <!--
+                    <li class="nav-item">
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Productos' ? 'active' : '' %>" href="/products">Productos</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Clientes' ? 'active' : '' %>" href="/customers">Clientes</a>
+                    </li>
+                    -->
+                </ul>
+                <!-- Opcional: Formulario de búsqueda dentro del offcanvas -->
+                <!-- <form class="d-flex mt-3" role="search">
+                    <input class="form-control me-2" type="search" placeholder="Buscar" aria-label="Search">
+                    <button class="btn btn-outline-success" type="submit">Buscar</button>
+                </form> -->
+
+                <hr class="d-lg-none text-white-50"> <!-- Separador para offcanvas -->
+                
+                <!-- Información de Usuario y Logout en Offcanvas y Navbar -->
+                <ul class="navbar-nav ms-auto">
+                    <% if (currentUser) { %>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="navbarUserDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-person-circle"></i> <%= currentUser.name || currentUser.email %>
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" aria-labelledby="navbarUserDropdown">
+                                <!-- <li><a class="dropdown-item" href="/profile">Perfil</a></li> -->
+                                <!-- <li><hr class="dropdown-divider"></li> -->
+                                <li><a class="dropdown-item" href="/logout"><i class="bi bi-box-arrow-right"></i> Cerrar Sesión</a></li>
+                            </ul>
+                        </li>
+                    <% } else { %>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/login">
+                                <i class="bi bi-box-arrow-in-right"></i> Iniciar Sesión
+                            </a>
+                        </li>
+                    <% } %>
+                    <li class="nav-item d-flex align-items-center ms-lg-2 mt-2 mt-lg-0">
+                        <button class="btn btn-outline-secondary btn-sm" id="themeToggleBtn" title="Cambiar tema">
+                            <i class="bi bi-sun-fill" id="themeIcon"></i>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</nav>

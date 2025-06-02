@@ -1,0 +1,92 @@
+<%- include('partials/header', { title: 'Ventas' }) %>
+<%- include('partials/navigation', { title: 'Ventas' }) %>
+
+<main class="container-fluid mt-4">
+    <h2>Historial de Ventas</h2>
+    <hr>
+    <div class="table-responsive">
+        <table class="table table-striped table-bordered" id="salesTable" style="width:100%">
+            <thead>
+                <tr>
+                    <th>ID Venta</th>
+                    <th>Fecha</th>
+                    <th>Cliente</th>
+                    <th>Productos</th> <!-- Nueva Columna -->
+                    <th>Total</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- El contenido será cargado por DataTables server-side -->
+            </tbody>
+        </table>
+    </div>
+    <% if (typeof error !== 'undefined' && error) { %>
+        <div class="alert alert-danger mt-3"><%= error %></div>
+    <% } %>
+</main>
+
+<!-- Modal para Ver Detalles de la Venta -->
+<div class="modal fade" id="saleDetailsModal" tabindex="-1" aria-labelledby="saleDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable"> <!-- modal-xl para más espacio -->
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="saleDetailsModalLabel">Detalles de la Venta</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="saleDetailsModalLoading" class="text-center">Cargando detalles...</p>
+                <div id="saleDetailsModalContent" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Información General</h6>
+                            <p><strong>ID Pedido:</strong> <span id="modalSaleId"></span></p>
+                            <p><strong>Fecha:</strong> <span id="modalSaleDate"></span></p>
+                            <p><strong>Cliente:</strong> <span id="modalSaleCustomer"></span></p>
+                            <p><strong>Email Cliente:</strong> <span id="modalSaleCustomerEmail"></span></p>
+                            <p><strong>Estado:</strong> <span id="modalSaleStatus"></span></p>
+                            <p><strong>Total:</strong> <span id="modalSaleTotal"></span></p>
+                            <p><strong>Método de Pago:</strong> <span id="modalSalePaymentMethod"></span></p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Dirección de Facturación</h6>
+                            <address id="modalBillingAddress" style="white-space: pre-line;"></address>
+                            <h6>Dirección de Envío</h6>
+                            <address id="modalShippingAddress" style="white-space: pre-line;"></address>
+                        </div>
+                    </div>
+                    <hr>
+                    <h6>Productos</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered" id="saleDetailsProductsTable">
+                            <thead>
+                                <tr>
+                                    <th>Producto</th>
+                                    <th>Cantidad</th>
+                                    <th>Precio Unit.</th>
+                                    <th>Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Filas de productos se insertarán aquí -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="saleDetailsNotes">
+                        <h6>Nota del Cliente:</h6>
+                        <p id="modalCustomerNote"style="white-space: pre-line;"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <!-- Podríamos añadir un botón de imprimir aquí también -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('partials/footer') %>
+
+<!-- El script de DataTables y los listeners de botones se manejarán en main.js -->
