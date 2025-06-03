@@ -20,7 +20,7 @@ app.use(session({
     resave: false,
     saveUninitialized: false, // Cambiar a true si quieres guardar sesiones vacías
     cookie: { 
-        secure: process.env.NODE_ENV === 'production', // Usar cookies seguras en producción (HTTPS)
+        secure: process.env.COOKIE_SECURE === 'true', // Controlado por variable de entorno
         maxAge: 1000 * 60 * 60 * 24 // Duración de la cookie (ej: 24 horas)
     }
 }));

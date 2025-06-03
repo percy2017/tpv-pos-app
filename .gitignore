@@ -25,3 +25,7 @@ Thumbs.db
 .idea/
 *.swp
 *~
+
+# Electron app specific
+electron-app/node_modules/
+electron-app/dist_electron/

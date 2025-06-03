@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/img/icon.png">
     <title>Iniciar Sesión - TVP-POS</title>
     <!-- Bootstrap CSS (CDN) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -58,14 +59,14 @@
                 </div>
                 <hr>
                 <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="form-label small">Configurac   ión Sitio WordPress</span>
+                    <span class="form-label small">Configuración Sitio WordPress</span>
                     <button class="btn btn-sm btn-outline-secondary py-0 px-1" type="button" id="toggleWpUrlBlockVisibility" title="Mostrar/Ocultar URL de WordPress">
                         <i class="bi bi-eye"></i>
                     </button>
                 </div>
                 <div class="mb-3" id="wpUrlBlockWrapper">
                     <label for="wp_site_url" class="form-label visually-hidden">URL WordPress</label>
-                    <input type="url" class="form-control" id="wp_site_url" name="wp_site_url" placeholder="Ej: http://localhost/sitio" value="http://localhost" required>
+                    <input type="url" class="form-control" id="wp_site_url" name="wp_site_url" placeholder="Ej: http://localhost/sitio" value="" required>
                 </div>
                 <button type="submit" class="btn btn-primary w-100">Ingresar</button>
                
@@ -87,5 +88,46 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Custom JS -->
     <script src="/js/main.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Cargar valores guardados al iniciar la página
+            const savedEmail = localStorage.getItem('tvpPosLoginEmail');
+            if (savedEmail) {
+                document.getElementById('email').value = savedEmail;
+            }
+
+            const savedWpSiteUrl = localStorage.getItem('tvpPosLoginWpSiteUrl');
+            if (savedWpSiteUrl) {
+                document.getElementById('wp_site_url').value = savedWpSiteUrl;
+            }
+
+            const savedPassword = localStorage.getItem('tvpPosLoginPassword');
+            if (savedPassword) {
+                document.getElementById('password').value = savedPassword;
+            }
+
+            // Guardar valores cuando el formulario se envía
+            const loginForm = document.querySelector('form[action="/login"]');
+            if (loginForm) {
+                loginForm.addEventListener('submit', function() {
+                    const emailInput = document.getElementById('email');
+                    if (emailInput) {
+                        localStorage.setItem('tvpPosLoginEmail', emailInput.value);
+                    }
+
+                    const wpSiteUrlInput = document.getElementById('wp_site_url');
+                    if (wpSiteUrlInput) {
+                        localStorage.setItem('tvpPosLoginWpSiteUrl', wpSiteUrlInput.value);
+                    }
+
+                    const passwordInput = document.getElementById('password');
+                    if (passwordInput) {
+                        localStorage.setItem('tvpPosLoginPassword', passwordInput.value);
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>

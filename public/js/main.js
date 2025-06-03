@@ -1142,6 +1142,7 @@ $(document).ready(function() {
     const passwordInput = document.getElementById('password');
     if (togglePasswordBtn && passwordInput) {
         togglePasswordBtn.addEventListener('click', function () {
+            // console.log("togglePasswordVisibility")
             const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
             passwordInput.setAttribute('type', type);
             // Cambiar el icono del botón
