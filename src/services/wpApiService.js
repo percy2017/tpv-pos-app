@@ -31,9 +31,11 @@ const getApiClient = (wpSiteUrl, apiToken) => {
  * @param {string} [searchTerm=''] - Término de búsqueda.
  * @param {string} [orderBy='date'] - Campo por el cual ordenar.
  * @param {string} [orderDir='DESC'] - Dirección del orden (asc/desc).
+ * @param {object|null} [dtColumns=null] - Parámetro 'columns' de DataTables.
+ * @param {object|null} [dtOrder=null] - Parámetro 'order' de DataTables.
  * @returns {Promise<object>} Un objeto con { data: array_de_ventas, recordsTotal: numero_total, recordsFiltered: numero_filtrado }
  */
-export const getWPSales = async (wpSiteUrl, apiToken, page = 1, perPage = 10, customerId = null, searchTerm = '', orderBy = 'date', orderDir = 'DESC') => {
+export const getWPSales = async (wpSiteUrl, apiToken, page = 1, perPage = 10, customerId = null, searchTerm = '', orderBy = 'date', orderDir = 'DESC', dtColumns = null, dtOrder = null) => {
     const apiClient = getApiClient(wpSiteUrl, apiToken);
     try {
         const params = { 
@@ -47,26 +49,54 @@ export const getWPSales = async (wpSiteUrl, apiToken, page = 1, perPage = 10, cu
             params.customer_id = customerId;
         }
         if (searchTerm) {
-            params.search = searchTerm; // El plugin lo manejará
+            params.search = searchTerm; // El plugin lo manejará (buscará en texto y teléfono)
         }
+        // phoneSearch ya no es un parámetro separado aquí.
         // Para el ordenamiento, el plugin espera 'orderby' y 'order' directamente
         // si no vienen de la estructura compleja de DataTables.
-        // Si el controlador Node.js ya traduce los params de DT, aquí solo pasamos los simples.
-        // Por ahora, asumimos que el controlador Node.js pasará los params de DT al plugin
-        // y el plugin los interpretará. Si no, necesitaríamos pasar 'orderby' y 'order' aquí.
-        // De hecho, el plugin ya está preparado para recibir 'order' (array) y 'columns' (array)
-        // si se envían como query params, o los simples 'orderby' y 'order'.
-        // Para simplificar, el controlador Node.js para DataTables pasará los params complejos.
-        // Para la llamada simple desde showSales (si aún se usa), pasamos los simples.
-        if (orderBy) params.orderby = orderBy; // Para llamadas que no son de DT
-        if (orderDir) params.order = orderDir; // Para llamadas que no son de DT
+        // El controlador Node.js pasará los parámetros de DataTables (dtColumns, dtOrder)
+        // que el plugin de WP utilizará si están presentes.
+        if (dtColumns) {
+            // DataTables envía 'columns' como un array de objetos. El plugin de WP espera esto.
+            // No es necesario convertirlo a JSON string si axios lo maneja bien para query params.
+            // Si axios no lo serializa bien como query params (ej. columns[0][data]=...),
+            // podríamos necesitar JSON.stringify y que el plugin lo decodifique.
+            // Por ahora, asumimos que el plugin puede manejarlo o que el controlador Node.js
+            // ya lo ha preparado adecuadamente si es necesario.
+            // El plugin de WP está preparado para recibir 'columns' y 'order' como arrays de objetos
+            // directamente en los query params si se envían como tal (ej. PHP $_GET['columns']).
+            // Si se envían como parte del cuerpo POST, también.
+            // Aquí, como es una petición GET, axios los serializará en la URL.
+            // El plugin PHP deberá ser capaz de leerlos.
+            // Alternativamente, si el plugin espera JSON, haríamos:
+            // params.dt_columns = JSON.stringify(dtColumns);
+            // params.dt_order = JSON.stringify(dtOrder);
+            // Pero el plugin actual parece esperar los parámetros directamente.
+            // El controlador ya pasa dtColumns y dtOrder, así que los añadimos a params.
+            // El plugin de WP debe estar preparado para recibir 'columns' y 'order' como arrays.
+            // Axios serializará esto como columns[0][data]=...&columns[0][name]=... etc.
+            // El plugin PHP debe poder leer esto de $_GET.
+            // Si el plugin espera 'orderby' y 'order' simples, el controlador Node.js ya los establece.
+            // Esta función es genérica, así que si dtColumns y dtOrder vienen del controlador de DT,
+            // el plugin de WP los usará. Si no, usará orderBy y orderDir.
+            // El plugin de WP está diseñado para tomar dtOrder y dtColumns si existen,
+            // y si no, usar los parámetros 'orderby' y 'order' simples.
+            // No necesitamos pasar dtColumns y dtOrder explícitamente aquí si el plugin
+            // ya los toma de la solicitud original que le llega (que es un POST al endpoint Node /api/sales/dt).
+            // La llamada desde el controlador Node a esta función getWPSales ya incluye
+            // orderBy y orderDir que se derivan de dtColumns y dtOrder.
+            // Por lo tanto, solo necesitamos pasar orderBy y orderDir.
+        }
+
+        if (orderBy) params.orderby = orderBy;
+        if (orderDir) params.order = orderDir;
 
 
         // La API del plugin /sales (GET) ahora devuelve un objeto con data, recordsTotal, recordsFiltered
         const response = await apiClient.get('/sales', { params });
         
         // La respuesta del plugin ya debería tener el formato { data: [], recordsTotal: X, recordsFiltered: Y }
-        return response.data; 
+        return response.data;
 
     } catch (error) {
         console.error("Error al obtener ventas desde WP API:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
@@ -115,6 +145,24 @@ export const getWPUsers = async (wpSiteUrl, apiToken, page = 1, perPage = 10, ro
     } catch (error) {
         console.error("Error al obtener usuarios desde WP API:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw error;
+    }
+};
+
+/**
+ * Obtiene los contadores de estado de pedidos desde la API de WordPress para el dashboard.
+ * @param {string} wpSiteUrl - La URL base del sitio WordPress.
+ * @param {string} apiToken - El token de API para autenticación.
+ * @returns {Promise<object>} Un objeto con los contadores (ej: { processing: 0, on_hold: 0, completed: 0 }).
+ */
+export const getWPOrderStatusCounts = async (wpSiteUrl, apiToken) => {
+    const apiClient = getApiClient(wpSiteUrl, apiToken);
+    try {
+        const response = await apiClient.get('/dashboard/order-status-counts');
+        return response.data; 
+    } catch (error) {
+        console.error("Error al obtener contadores de estado de pedidos desde WP API:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        // Devolver un objeto vacío o con valores por defecto en caso de error para no romper el dashboard
+        return { processing: 'N/A', on_hold: 'N/A', completed: 'N/A', error: true };
     }
 };
 
@@ -269,7 +317,15 @@ export const getWPSaleById = async (wpSiteUrl, apiToken, orderId) => {
     try {
         // Asumimos que el endpoint en el plugin será /sales/:id
         const response = await apiClient.get(`/sales/${orderId}`);
-        return response.data; // El plugin debería devolver el objeto del pedido directamente
+        let saleDetails = response.data;
+
+        // Transformar line_items si es un objeto en lugar de un array
+        if (saleDetails && saleDetails.line_items && typeof saleDetails.line_items === 'object' && !Array.isArray(saleDetails.line_items)) {
+            console.log(`[wpApiService] Transformando line_items de objeto a array para venta ID: ${orderId}`);
+            saleDetails.line_items = Object.values(saleDetails.line_items);
+        }
+        
+        return saleDetails; 
     } catch (error) {
         console.error(`Error al obtener detalles de la venta ${orderId} desde WP API:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         if (error.response && error.response.status === 404) {

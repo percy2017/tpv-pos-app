@@ -1,5 +1,48 @@
-export const showDashboard = (req, res) => {
-    res.render('index', { title: 'Dashboard' });
+import PDFDocument from 'pdfkit';
+// Asumimos que getWPSaleById se exporta desde wpApiService.js y se puede importar así.
+// Si está dentro de un import() dinámico, la estrategia para usarla aquí necesitará ajuste.
+// Por ahora, para la estructura:
+import { getWPSaleById, getWPOrderStatusCounts } from '../services/wpApiService.js'; // Añadido getWPOrderStatusCounts
+
+
+export const showDashboard = async (req, res) => { // Convertido a async
+    const wpSiteUrl = req.session.wp_site_url;
+    const apiToken = req.session.api_token;
+    let dashboardData = {
+        orderCounts: null,
+        // Aquí se añadirán más datos del dashboard (ventasMes, topSeller, etc.)
+        error: null
+    };
+
+    if (wpSiteUrl && apiToken) {
+        try {
+            // Obtener contadores de estado de pedidos
+            dashboardData.orderCounts = await getWPOrderStatusCounts(wpSiteUrl, apiToken);
+            if (dashboardData.orderCounts.error) {
+                console.warn("Error parcial al cargar datos del dashboard (orderCounts):", dashboardData.orderCounts);
+                // No sobreescribir el error principal si otros datos sí cargan.
+            }
+
+            // Aquí se llamarían a otras funciones para obtener más datos del dashboard
+            // ej: dashboardData.salesSummary = await getWPSalesSummary(wpSiteUrl, apiToken);
+
+        } catch (error) {
+            console.error("Error al cargar datos para el dashboard:", error.message);
+            dashboardData.error = 'No se pudieron cargar algunos datos del dashboard desde WordPress.';
+            if (error.response && error.response.status === 401) {
+                dashboardData.error = 'Error de autenticación al cargar datos del dashboard. Tu token podría haber expirado.';
+            } else if (error.response && error.response.status === 403) {
+                dashboardData.error = 'No tienes permiso para ver algunos datos del dashboard.';
+            }
+        }
+    } else {
+        dashboardData.error = 'No se pudo conectar al sitio de WordPress para cargar datos del dashboard. Por favor, inicia sesión.';
+    }
+
+    res.render('index', { 
+        title: 'Dashboard',
+        dashboardData: dashboardData
+    });
 };
 
 export const showPos = async (req, res) => {
@@ -132,6 +175,167 @@ export const searchProductsApi = async (req, res) => {
     }
 };
 
+export const getSaleTicketPDF = async (req, res) => {
+    const wpSiteUrl = req.session.wp_site_url;
+    const apiToken = req.session.api_token;
+    const saleId = req.params.id;
+
+    if (!wpSiteUrl || !apiToken) {
+        return res.status(401).json({ error: 'Autenticación requerida.' });
+    }
+    if (!saleId) {
+        return res.status(400).json({ error: 'Se requiere ID de la venta.' });
+    }
+
+    try {
+        // Obtener detalles de la venta usando el servicio existente
+        // Nota: getWPSaleById es async, así que usamos await.
+        // Asegúrate de que la función getWPSaleById esté disponible y funcione como se espera.
+        const saleDetails = await getWPSaleById(wpSiteUrl, apiToken, saleId);
+
+        console.log(`[PDF Ticket DEBUG] saleDetails para ID ${saleId}:`, JSON.stringify(saleDetails, null, 2));
+
+        if (!saleDetails) {
+            console.error(`[PDF Ticket ERROR] No se encontraron detalles para la venta ID ${saleId}`);
+            return res.status(404).send('Venta no encontrada');
+        }
+
+        const doc = new PDFDocument({
+            size: [226.77, 841.89], // Ancho de 80mm (226.77 pt) y altura larga
+            margins: { top: 10, bottom: 10, left: 5, right: 5 } // Márgenes ajustados para ticket
+        });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="ticket-${saleId}.pdf"`);
+
+        doc.pipe(res);
+
+        // Contenido del Ticket
+        doc.fontSize(10).text('Mi Tienda POS', { align: 'center' });
+        if (saleDetails.billing_address) { // Ejemplo, si tienes datos de la tienda
+             // doc.fontSize(8).text(saleDetails.store_address_line_1, { align: 'center' });
+             // doc.fontSize(8).text(saleDetails.store_phone, { align: 'center' });
+        }
+        doc.moveDown(0.5);
+        doc.fontSize(8).text(`Ticket ID: ${saleDetails.id}`, { align: 'left' });
+        doc.text(`Fecha: ${new Date(saleDetails.date_created).toLocaleString()}`, { align: 'left' });
+        doc.text(`Cliente: ${saleDetails.customer_name || 'Invitado'}`, { align: 'left' });
+        if(saleDetails.billing_phone){
+            doc.text(`Tel: ${saleDetails.billing_phone}`, { align: 'left' });
+        }
+        doc.moveDown();
+        // Línea separadora simple
+        const lineWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+        doc.lineCap('butt').moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke();
+        doc.moveDown(0.5);
+
+        // Definición de columnas para ítems (80mm de ancho de página ~ 226 puntos)
+        // Márgenes son 5pt a cada lado, así que el área útil es ~216 pt.
+        const availableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+        const colWidthQty = 35;
+        const colWidthTotalItem = 50;
+        const colWidthProduct = availableWidth - colWidthQty - colWidthTotalItem - 10; // -10 para pequeños espacios entre columnas
+
+        const colProductX = doc.page.margins.left;
+        const colQtyX = colProductX + colWidthProduct + 5;
+        const colTotalItemX = colQtyX + colWidthQty + 5;
+
+        doc.fontSize(8);
+        const headerY = doc.y;
+        doc.text('Producto', colProductX, headerY, { width: colWidthProduct, align: 'left' });
+        doc.text('Cant.', colQtyX, headerY, { width: colWidthQty, align: 'right' });
+        doc.text('Total', colTotalItemX, headerY, { width: colWidthTotalItem, align: 'right' });
+        doc.moveDown(1.5); // Más espacio después de cabeceras
+        
+        // Línea después de cabeceras
+        doc.lineCap('butt').moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke();
+        doc.moveDown(0.5);
+        
+        // Ítems
+        if (saleDetails.line_items && Array.isArray(saleDetails.line_items) && saleDetails.line_items.length > 0) {
+            saleDetails.line_items.forEach(item => {
+                doc.fontSize(7);
+                const itemStartY = doc.y;
+                
+                // Dibujar nombre del producto (puede ocupar varias líneas)
+                doc.text(item.name, colProductX, itemStartY, { width: colWidthProduct, align: 'left' });
+                // Calcular la altura que ocupó el nombre del producto
+                const productNameHeight = doc.heightOfString(item.name, { width: colWidthProduct, align: 'left' });
+
+                // Dibujar cantidad y total en la misma línea Y inicial del nombre
+                doc.text(item.quantity.toString(), colQtyX, itemStartY, { width: colWidthQty, align: 'right' });
+                doc.text(parseFloat(item.total).toFixed(2), colTotalItemX, itemStartY, { width: colWidthTotalItem, align: 'right' });
+                
+                // Avanzar Y basado en la altura del elemento más alto de la fila (usualmente el nombre del producto)
+                doc.y = itemStartY + productNameHeight + 3; // +3 para un pequeño margen inferior
+            });
+        } else {
+            doc.moveDown(0.5);
+            doc.fontSize(8).text('No hay productos detallados en este pedido.', { align: 'center', width: availableWidth });
+            console.warn(`[PDF Ticket WARN] Venta ID ${saleId}: No se encontraron line_items o no es un array. Contenido de line_items:`, saleDetails.line_items);
+        }
+        doc.moveDown(0.5);
+        doc.lineCap('butt').moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke();
+        doc.moveDown(0.5);
+
+        // Totales
+        const totalsLabelX = doc.page.margins.left + 80; // Ajustar para que las etiquetas queden más a la izquierda
+        const totalsAmountX = doc.page.width - doc.page.margins.right - colWidthTotalItem; // Alinear montos con la columna de total de ítems
+        const totalsWidth = colWidthTotalItem; // Ancho para los montos
+
+        let subtotalForCalc = 0;
+        if (saleDetails.line_items && Array.isArray(saleDetails.line_items)) {
+            subtotalForCalc = saleDetails.line_items.reduce((acc, item) => acc + parseFloat(item.total || 0), 0);
+        }
+        // Si el subtotal viene de WooCommerce (ej. saleDetails.subtotal), usar ese.
+        // Aquí asumimos que el subtotal es la suma de los totales de línea antes de impuestos de pedido.
+        // WooCommerce a veces calcula 'subtotal' de forma diferente.
+        // Por ahora, usaremos la suma de los totales de línea como subtotal visible si no hay impuestos de pedido.
+        // Si hay impuestos de pedido, el 'total' de la venta ya los incluye.
+        // El campo 'total_tax' de WooCommerce es el impuesto total del pedido.
+        // El 'total' del pedido es subtotal_items - descuentos_items + impuestos_items + fees + shipping_total + impuestos_shipping - descuentos_pedido.
+
+        const displaySubtotal = saleDetails.total - (saleDetails.total_tax || 0); // Un subtotal antes de impuestos de pedido
+
+        doc.fontSize(8);
+        doc.text('SUBTOTAL:', totalsLabelX, doc.y, { width: 60, align: 'right' }); // Ancho para la etiqueta
+        doc.text(`${saleDetails.currency} ${parseFloat(displaySubtotal).toFixed(2)}`, totalsAmountX, doc.y, { width: totalsWidth, align: 'right' });
+        doc.moveDown(0.3);
+
+        if (saleDetails.total_tax && parseFloat(saleDetails.total_tax) > 0) {
+            doc.text('IMPUESTOS:', totalsLabelX, doc.y, { width: 60, align: 'right' });
+            doc.text(`${saleDetails.currency} ${parseFloat(saleDetails.total_tax).toFixed(2)}`, totalsAmountX, doc.y, { width: totalsWidth, align: 'right' });
+            doc.moveDown(0.3);
+        }
+        
+        doc.fontSize(10).font('Helvetica-Bold');
+        doc.text('TOTAL:', totalsLabelX, doc.y, { width: 60, align: 'right' });
+        doc.text(`${saleDetails.currency} ${parseFloat(saleDetails.total).toFixed(2)}`, totalsAmountX, doc.y, { width: totalsWidth, align: 'right' });
+        doc.font('Helvetica'); // Reset font
+        doc.moveDown();
+        
+        if (saleDetails.payment_method_title) {
+            doc.fontSize(8).text(`Pagado con: ${saleDetails.payment_method_title}`, { align: 'center' });
+            doc.moveDown(0.5);
+        }
+
+        doc.fontSize(8).text('¡Gracias por su compra!', { align: 'center' });
+        if (saleDetails.customer_note) {
+            doc.moveDown();
+            doc.fontSize(7).text('Nota:', { align: 'center' });
+            doc.fontSize(7).text(saleDetails.customer_note, { align: 'center', width: lineWidth });
+        }
+
+        doc.end();
+
+    } catch (error) {
+        console.error("Error generando PDF del ticket:", error.message, error.stack);
+        if (!res.headersSent) {
+            res.status(500).send('Error al generar el PDF del ticket');
+        }
+    }
+};
+
 export const showSales = async (req, res) => {
     console.log('--- EJECUTANDO showSales ---'); 
     const wpSiteUrl = req.session.wp_site_url;
@@ -189,6 +393,7 @@ export const apiGetUsersForDataTable = async (req, res) => {
         const start = parseInt(req.body.start) || 0;
         const length = parseInt(req.body.length) || 10;
         const searchValue = req.body.search?.value || '';
+        // phoneSearchValue ya no es necesario aquí
         
         const page = Math.floor(start / length) + 1;
         const perPage = length;
@@ -274,7 +479,7 @@ export const apiGetSalesForDataTable = async (req, res) => {
         }
         
         console.log(`[TVP-POS DEBUG] apiGetSalesForDataTable: page=${page}, perPage=${perPage}, search=${searchValue}, orderBy=${orderBy}, orderDir=${orderDir}`);
-        // Pasar los parámetros de DataTables (order, columns) al servicio para que el plugin los use
+        // Ya no se pasa phoneSearchValue. El servicio getWPSales se adaptará para no esperarlo.
         const salesResult = await getWPSales(wpSiteUrl, apiToken, page, perPage, null, searchValue, orderBy, orderDir, req.body.columns, req.body.order);
 
         res.json({

@@ -2,43 +2,58 @@ $(document).ready(function() {
     // ... (código existente de DataTables, Carrito, Tema) ...
     // Inicializar DataTables para la tabla de ventas
     if ($('#salesTable').length) {
-        $('#salesTable').DataTable({
+        $('#salesTable').DataTable({ // No es necesario guardar la instancia aquí si no hay listeners externos
             responsive: true,
             processing: true,
             serverSide: true,
             ajax: {
                 url: '/api/sales/dt', // Endpoint que creamos en Node.js
                 type: 'POST',
+                // Ya no se necesita la función data para phoneSearch
             },
             columns: [
-                { data: 'id', render: function(data, type, row) {
-                    return `<a href="/wp-admin/admin.php?page=wc-orders&action=edit&id=${data}" target="_blank">#${data}</a>`;
-                }},
-                { data: 'date_created', render: function(data, type, row) {
-                    return data ? new Date(data).toLocaleString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'N/A';
-                }},
-                { data: 'customer_name', render: function(data, type, row) {
-                    if (row.customer_id) {
-                        // Podríamos hacer este enlace al perfil del cliente en el TPV si existiera una vista para ello
-                        return `<a href="/wp-admin/user-edit.php?user_id=${row.customer_id}" target="_blank">${data || `Cliente ID: ${row.customer_id}`}</a>`;
+                { 
+                    data: null, // Columna combinada ID / Fecha
+                    render: function(data, type, row) {
+                        const idHtml = `#${row.id}`;
+                        const dateHtml = row.date_created ? new Date(row.date_created).toLocaleString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'N/A';
+                        return `${idHtml}<br><small class="text-muted">${dateHtml}</small>`;
+                    },
+                    orderable: true, // Podríamos querer ordenar por fecha o ID, DataTables usará el primer 'data' si no se especifica 'orderData'
+                                   // Para ordenar por fecha, podríamos necesitar especificar orderData: 'date_created'
+                                   // o asegurar que el backend ordene por fecha si esta columna es la de ordenamiento.
+                                   // Por ahora, el ordenamiento por defecto es por fecha descendente (ver 'order: [[1, 'desc']]' abajo, que ahora será [[0, 'desc']] o ajustado)
+                },
+                { 
+                    data: 'customer_name', 
+                    render: function(data, type, row) {
+                        let displayName = data || (row.customer_id ? `Cliente ID: ${row.customer_id}` : 'Invitado');
+                        if (row.billing_phone) {
+                            displayName += `<br><small class="text-muted"><i class="bi bi-telephone-fill me-1"></i>${row.billing_phone}</small>`;
+                        } else {
+                            displayName += `<br><small class="text-muted">Tel: N/A</small>`;
+                        }
+                        return displayName;
                     }
-                    return data || 'Invitado';
-                }},
-                { data: 'products_summary', orderable: false, searchable: false, defaultContent: '-' }, // Nueva columna de productos
-                { data: 'total', render: function(data, type, row) {
-                    return `${row.currency || ''} ${parseFloat(data || 0).toFixed(2)}`;
-                }},
-                { data: 'status', render: function(data, type, row) {
-                    return `<span class="badge bg-${getBootstrapStatusColor(data)}">${data ? data.replace('wc-', '') : 'desconocido'}</span>`;
-                }},
+                },
+                { data: 'products_summary', orderable: false, searchable: false, defaultContent: '-' },
+                { 
+                    data: null, // Columna combinada Total / Estado
+                    render: function(data, type, row) {
+                        const totalHtml = `${row.currency || ''} ${parseFloat(row.total || 0).toFixed(2)}`;
+                        const statusHtml = `<span class="badge bg-${getBootstrapStatusColor(row.status)}">${row.status ? row.status.replace('wc-', '') : 'desconocido'}</span>`;
+                        return `${totalHtml}<br>${statusHtml}`;
+                    },
+                    orderable: true // Podría ordenarse por total o estado
+                },
                 { 
                     data: null, 
                     orderable: false, 
                     searchable: false,
                     render: function(data, type, row) {
-                        let buttons = `<button class="btn btn-sm btn-info view-sale-details-btn me-1" data-order-id="${row.id}" title="Ver Detalles"><i class="bi bi-eye"></i> Ver</button>`;
-                        // El botón de imprimir podría generar un PDF o una vista simple
-                        buttons += `<button class="btn btn-sm btn-warning print-sale-receipt-btn" data-order-id="${row.id}" title="Imprimir Recibo (Próximamente)"><i class="bi bi-printer"></i></button>`;
+                        let buttons = `<button class="btn btn-sm btn-info view-sale-details-btn me-1" data-order-id="${row.id}" title="Ver Detalles"><i class="bi bi-eye"></i></button>`;
+                        // Actualizar el botón de imprimir para que funcione directamente
+                        buttons += `<button class="btn btn-sm btn-warning print-sale-receipt-btn" data-order-id="${row.id}" title="Imprimir Ticket"><i class="bi bi-printer"></i></button>`;
                         return buttons;
                     }
                 }
@@ -47,15 +62,16 @@ $(document).ready(function() {
                 url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json',
                 processing: "Procesando...",
             },
-            order: [[1, 'desc']] // Ordenar por fecha descendente por defecto
+            order: [[0, 'desc']] // Ajustar el índice de la columna de ordenamiento por defecto (antes era Fecha en índice 1, ahora ID/Fecha en índice 0)
         });
+        // Ya no se necesita el listener para phoneSearch
     }
 
     // Lógica para mostrar detalles de venta en modal
     // SOLO si la tabla de ventas existe Y el modal existe, configuramos esta lógica
     if ($('#salesTable').length) {
         const saleDetailsModalElement = document.getElementById('saleDetailsModal');
-        console.log("[TVP-POS DEBUG] Intentando encontrar #saleDetailsModal:", saleDetailsModalElement);
+        // console.log("[TVP-POS DEBUG] Intentando encontrar #saleDetailsModal:", saleDetailsModalElement);
 
         if (saleDetailsModalElement) {
             const saleDetailsModal = new bootstrap.Modal(saleDetailsModalElement);
@@ -133,10 +149,64 @@ $(document).ready(function() {
                     console.error('Error al obtener detalles de la venta:', error);
                     saleDetailsModalLoading.hide();
                     const errorHtml = `<div class="alert alert-danger">Error al cargar detalles: ${error.message}</div>`;
-                    $('#saleDetailsModalContent').html(errorHtml).show(); 
+                    // No reemplazar todo el contenido, sino mostrar el error en un lugar específico o usar un toast.
+                    // Por ahora, para simplificar, lo dejamos así, pero idealmente no se borra la estructura del modal.
+                    // Una mejor aproximación sería tener un div específico para errores dentro del modal.
+                    // $('#saleDetailsModalContent').html(errorHtml).show(); // Esto borra la estructura.
+                    // Mejor mostrar el error en el loading o en un toast.
+                    if (saleDetailsModalLoading.length) { // Si el elemento de carga existe
+                        saleDetailsModalLoading.html(errorHtml).show(); // Mostrar error en el área de carga
+                    } else { // Fallback si no hay elemento de carga
+                         $('#saleDetailsModalContent').prepend(errorHtml).show();
+                    }
                 }
             });
+
+            // Event listener para el botón de imprimir ticket
+            const btnPrintTicket = document.getElementById('btnPrintTicket');
+            if (btnPrintTicket) {
+                btnPrintTicket.addEventListener('click', function() {
+                    const orderId = modalSaleId.text(); // Obtener el ID de la venta del span
+                    if (orderId) {
+                        const pdfUrl = `/api/sales/${orderId}/pdf/ticket`;
+                        window.open(pdfUrl, '_blank'); // Abrir PDF en nueva pestaña
+                    } else {
+                        console.error('No se pudo obtener el ID de la venta para imprimir el ticket.');
+                        Swal.fire({
+                            toast: true,
+                            theme: "dark",
+                            position: 'top-end',
+                            icon: 'error',
+                            title: 'Error',
+                            text: 'No se pudo obtener el ID de la venta para imprimir.',
+                            showConfirmButton: false,
+                            timer: 3000
+                        });
+                    }
+                });
+            }
         } // Cierre del if (saleDetailsModalElement)
+
+        // Event listener para el botón de imprimir ticket directamente desde la tabla
+        $('#salesTable').on('click', '.print-sale-receipt-btn', function() {
+            const orderId = $(this).data('orderId');
+            if (orderId) {
+                const pdfUrl = `/api/sales/${orderId}/pdf/ticket`;
+                window.open(pdfUrl, '_blank');
+            } else {
+                console.error('No se pudo obtener el ID de la venta para imprimir el ticket desde la tabla.');
+                Swal.fire({
+                    toast: true,
+                    theme: "dark",
+                    position: 'top-end',
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'No se pudo obtener el ID de la venta para imprimir.',
+                    showConfirmButton: false,
+                    timer: 3000
+                });
+            }
+        });
     } // Cierre del if ($('#salesTable').length)
 
     const cartItemsContainer = $('#cartItems');
@@ -1177,5 +1247,5 @@ $(document).ready(function() {
         });
     }
 
-    console.log("main.js cargado y lógica de UI inicializada.");
+    // console.log("main.js cargado y lógica de UI inicializada.");
 });

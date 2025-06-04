@@ -43,4 +43,48 @@ function tvp_pos_validate_token_and_get_user( $token ) {
     // Token válido y no expirado
     return $user;
 }
+
+/**
+ * Callback de permiso genérico para los endpoints de la API de TVP-POS.
+ * Verifica la validez del token X-TVP-Token.
+ *
+ * @param WP_REST_Request $request La solicitud REST.
+ * @return bool|WP_Error True si el token es válido, WP_Error en caso contrario.
+ */
+if ( ! function_exists( 'tvp_pos_api_permission_check' ) ) {
+    function tvp_pos_api_permission_check( WP_REST_Request $request ) {
+        $token = $request->get_header( 'X-TVP-Token' );
+        if ( ! $token ) {
+            return new WP_Error( 
+                'rest_forbidden_no_token', 
+                __( 'Token no proporcionado.', 'tvp-pos-wp-connector' ), 
+                array( 'status' => 401 ) 
+            );
+        }
+
+        $user = tvp_pos_validate_token_and_get_user( $token );
+        if ( ! $user ) {
+            return new WP_Error( 
+                'rest_forbidden_invalid_token', 
+                __( 'Token inválido o expirado.', 'tvp-pos-wp-connector' ), 
+                array( 'status' => 403 )  // 403 Forbidden es más apropiado que 401 para token inválido
+            );
+        }
+
+        // Opcional: Establecer el usuario actual para WordPress si se van a usar funciones como current_user_can()
+        // wp_set_current_user( $user->ID );
+
+        // Opcional: Verificar capabilities específicas del usuario si es necesario para este endpoint particular
+        // Ejemplo:
+        // if ( ! user_can( $user->ID, 'view_woocommerce_reports' ) ) {
+        //     return new WP_Error( 
+        //         'rest_forbidden_capability', 
+        //         __( 'No tienes permiso para acceder a este recurso.', 'tvp-pos-wp-connector' ), 
+        //         array( 'status' => 403 ) 
+        //     );
+        // }
+        
+        return true;
+    }
+}
 ?>

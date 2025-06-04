@@ -24,6 +24,7 @@ router.get('/api/users/:id/sales', isAuthenticated, mainController.apiGetUserSal
 // API endpoints para Ventas
 router.post('/api/sales/dt', isAuthenticated, mainController.apiGetSalesForDataTable); // Para DataTables server-side (Ventas)
 router.get('/api/sales/:id', isAuthenticated, mainController.apiGetSaleById); // Obtener una venta específica por ID
+router.get('/api/sales/:id/pdf/ticket', isAuthenticated, mainController.getSaleTicketPDF); // Generar PDF del ticket de venta
 
 // API endpoints para eventos manuales del calendario (locales, sin autenticación para CRUD)
 router.post('/api/manual-events', mainController.apiCreateManualEvent); // Sin isAuthenticated
