@@ -65,6 +65,101 @@
     </div>
 </main>
 
+<!-- Modal para Ver Detalles de la Venta -->
+<div class="modal fade" id="saleDetailsModal" tabindex="-1" aria-labelledby="saleDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable"> <!-- modal-xl para más espacio -->
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="saleDetailsModalLabel">Detalles de la Venta</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="saleDetailsModalLoading" class="text-center">Cargando detalles...</p>
+                <div id="saleDetailsModalContent" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Información General</h6>
+                            <p><strong>Fecha:</strong> <span id="modalSaleDate"></span></p>
+                            <p><strong>Cliente:</strong> <span id="modalSaleCustomer"></span></p>
+                            <p><strong>Teléfono Cliente:</strong> <span id="modalSaleCustomerPhone"></span></p>
+                            <p><strong>Estado:</strong> <span id="modalSaleStatus"></span></p>
+                            <p><strong>Total:</strong> <span id="modalSaleTotal"></span></p>
+                            <p><strong>Método de Pago:</strong> <span id="modalSalePaymentMethod"></span></p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Dirección de Facturación</h6>
+                            <address id="modalBillingAddress" style="white-space: pre-line;"></address>
+                            <h6>Dirección de Envío</h6>
+                            <address id="modalShippingAddress" style="white-space: pre-line;"></address>
+                            <div id="saleDetailsNotes">
+                                <h6>Nota del Cliente:</h6>
+                                <p id="modalCustomerNote"style="white-space: pre-line;"></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered" id="saleDetailsProductsTable">
+                            <thead>
+                                <tr>
+                                    <th>Producto</th>
+                                    <th>Cantidad</th>
+                                    <th>Precio Unit.</th>
+                                    <th>Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Filas de productos se insertarán aquí -->
+                            </tbody>
+                        </table>
+                    </div>
+                  
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-success" id="btnOpenSendMessageModal"><i class="bi bi-whatsapp"></i> Enviar Mensaje WhatsApp</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Enviar Mensaje WhatsApp -->
+<div class="modal fade" id="sendMessageModal" tabindex="-1" aria-labelledby="sendMessageModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sendMessageModalLabel">Enviar Mensaje por WhatsApp</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="sendMessageForm">
+                    <input type="hidden" id="whatsappOrderId">
+                    <div class="mb-3">
+                        <label for="whatsappPhoneNumber" class="form-label">Número de Teléfono del Cliente</label>
+                        <input type="tel" class="form-control" id="whatsappPhoneNumber" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="evolutionInstanceSelect" class="form-label">Instancia de Evolution API</label>
+                        <select class="form-select" id="evolutionInstanceSelect" required>
+                            <option value="" selected disabled>Cargando instancias...</option>
+                            <!-- Las instancias se cargarán aquí dinámicamente -->
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="whatsappMessageText" class="form-label">Mensaje</label>
+                        <textarea class="form-control" id="whatsappMessageText" rows="5" required></textarea>
+                        <small class="form-text text-muted">Puedes usar {cliente}, {pedidoId}, {servicio} y {fechaVence} como placeholders.</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btnConfirmSendWhatsApp">Enviar Mensaje Ahora</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- FullCalendar JS y dependencias (desde CDN) -->
 <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js'></script>
 <script src='https://cdn.jsdelivr.net/npm/@fullcalendar/bootstrap5@6.1.11/index.global.min.js'></script>
@@ -87,6 +182,55 @@
         const deleteManualEventBtn = document.getElementById('deleteManualEventBtn');
         const manualEventModalLabel = document.getElementById('manualEventModalLabel');
         const calendarSearchInput = document.getElementById('calendarSearchInput');
+
+        // Referencias para el modal de detalles de venta (saleDetailsModal)
+        const saleDetailsModalElement = document.getElementById('saleDetailsModal');
+        let saleDetailsModalInstance = null; // Se inicializará cuando se necesite
+        if (saleDetailsModalElement) {
+            saleDetailsModalInstance = new bootstrap.Modal(saleDetailsModalElement);
+        }
+        const saleDetailsModalLabel = $('#saleDetailsModalLabel'); // Usando jQuery para consistencia con el original
+        const saleDetailsModalLoading = $('#saleDetailsModalLoading');
+        const saleDetailsModalContent = $('#saleDetailsModalContent');
+        const saleDetailsProductsTableBody = $('#saleDetailsProductsTable tbody');
+        const modalSaleDate = $('#modalSaleDate');
+        const modalSaleCustomer = $('#modalSaleCustomer');
+        const modalSaleCustomerEmail = $('#modalSaleCustomerEmail');
+        const modalSaleStatus = $('#modalSaleStatus');
+        const modalSaleTotal = $('#modalSaleTotal');
+        const modalSalePaymentMethod = $('#modalSalePaymentMethod');
+        const modalBillingAddress = $('#modalBillingAddress');
+        const modalShippingAddress = $('#modalShippingAddress');
+        const modalCustomerNote = $('#modalCustomerNote');
+
+        // Referencias para el modal de envío de WhatsApp
+        const sendMessageModalElement = document.getElementById('sendMessageModal');
+        let sendMessageModalInstance = null;
+        if (sendMessageModalElement) {
+            sendMessageModalInstance = new bootstrap.Modal(sendMessageModalElement);
+        }
+        const whatsappPhoneNumberInput = document.getElementById('whatsappPhoneNumber');
+        const evolutionInstanceSelect = document.getElementById('evolutionInstanceSelect');
+        const whatsappMessageTextInput = document.getElementById('whatsappMessageText');
+        const whatsappOrderIdInput = document.getElementById('whatsappOrderId'); // Para guardar el orderId
+        const btnConfirmSendWhatsApp = document.getElementById('btnConfirmSendWhatsApp');
+
+        let currentCalendarEventDetails = {}; // Para guardar temporalmente datos del evento/venta
+
+        // Helper para colores de estado (copiado de main.js, o podría ser global)
+        function getBootstrapStatusColor(status) {
+            switch (status) {
+                case 'completed': return 'success';
+                case 'processing': return 'primary';
+                case 'on-hold': return 'warning';
+                case 'pending': return 'secondary';
+                case 'cancelled': return 'danger';
+                case 'refunded': return 'info';
+                case 'failed': return 'danger';
+                default: return 'light';
+            }
+        }
+
 
         function debounce(func, delay) {
             let timeout;
@@ -182,7 +326,7 @@
                 manualEventAllDayCheckbox.checked = selectionInfo.allDay;
                 manualEventModal.show();
             },
-            eventClick: function(info) {
+            eventClick: async function(info) { // <--- AÑADIDO ASYNC AQUÍ
                 if (info.event.id && !info.event.id.startsWith('wp_sub_')) {
                     manualEventModalLabel.textContent = 'Editar Evento Manual';
                     manualEventIdInput.value = info.event.id;
@@ -194,10 +338,198 @@
                     manualEventAllDayCheckbox.checked = info.event.allDay;
                     deleteManualEventBtn.style.display = 'inline-block';
                     manualEventModal.show();
-                } else if (info.event.extendedProps && info.event.extendedProps.order_url) {
-                    Swal.fire({
+                } else if (info.event.extendedProps && info.event.extendedProps.order_id && saleDetailsModalInstance) {
+                    const orderId = info.event.extendedProps.order_id;
+                    saleDetailsModalLabel.text(`Detalles de la Venta #${orderId}`);
+                    
+                    saleDetailsModalLoading.show();
+                    saleDetailsModalContent.hide();
+                    saleDetailsProductsTableBody.empty();
+
+                    saleDetailsModalInstance.show();
+                    console.log(`[TVP-POS DEBUG Calendar] Fetching details for order ID: ${orderId}`);
+
+                    try {
+                        const response = await fetch(`/api/sales/${orderId}`);
+                        if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(errorData.error || `Error ${response.status} al cargar detalles de la venta`);
+                        }
+                        const saleDetails = await response.json();
+                        console.log(`[TVP-POS DEBUG Calendar] Sale details received:`, saleDetails);
+
+                        saleDetailsModalLoading.hide();
+
+                        modalSaleDate.text(new Date(saleDetails.date_created).toLocaleString('es-ES'));
+                        
+                        let customerDisplayNameCalendar = 'Invitado';
+                        if (saleDetails.billing_first_name || saleDetails.billing_last_name) {
+                            customerDisplayNameCalendar = `${saleDetails.billing_first_name || ''} ${saleDetails.billing_last_name || ''}`.trim();
+                        } else if (saleDetails.customer_name) {
+                            customerDisplayNameCalendar = saleDetails.customer_name;
+                        } else if (saleDetails.customer_id) {
+                            customerDisplayNameCalendar = `Cliente ID: ${saleDetails.customer_id}`;
+                        }
+                        modalSaleCustomer.text(customerDisplayNameCalendar);
+
+                        // Referencia al nuevo span para el teléfono en el modal del calendario
+                        const modalSaleCustomerPhoneCalendar = saleDetailsModalElement.querySelector('#modalSaleCustomerPhone');
+                        if (modalSaleCustomerPhoneCalendar) {
+                            modalSaleCustomerPhoneCalendar.textContent = saleDetails.billing_phone || '-';
+                        }
+                        // Eliminar o comentar la línea de email si el span ya no existe o no se usa
+                        // modalSaleCustomerEmail.text(saleDetails.billing_email || '-'); 
+                        
+                        modalSaleStatus.html(`<span class="badge bg-${getBootstrapStatusColor(saleDetails.status)}">${saleDetails.status ? saleDetails.status.replace('wc-', '') : 'desconocido'}</span>`);
+                        modalSaleTotal.text(`${saleDetails.currency || ''} ${parseFloat(saleDetails.total || 0).toFixed(2)}`);
+                        modalSalePaymentMethod.text(saleDetails.payment_method_title || saleDetails.payment_method || '-');
+                        modalBillingAddress.html(saleDetails.billing_address ? saleDetails.billing_address.replace(/\n/g, '<br>') : 'No disponible');
+                        modalShippingAddress.html(saleDetails.shipping_address ? saleDetails.shipping_address.replace(/\n/g, '<br>') : 'No disponible');
+                        modalCustomerNote.html(saleDetails.customer_note ? saleDetails.customer_note.replace(/\n/g, '<br>') : '<em>Sin notas.</em>');
+
+                        if (saleDetails.line_items && saleDetails.line_items.length > 0) {
+                            saleDetails.line_items.forEach(item => {
+                                const itemPriceUnit = (item.quantity > 0 && item.total) ? (parseFloat(item.total) / item.quantity) : (item.price_unit || 0);
+                                const itemRow = `<tr>
+                                    <td>${item.name}</td>
+                                    <td>${item.quantity}</td>
+                                    <td>Bs.${parseFloat(itemPriceUnit).toFixed(2)}</td> 
+                                    <td>Bs.${parseFloat(item.total).toFixed(2)}</td>
+                                </tr>`;
+                                saleDetailsProductsTableBody.append(itemRow);
+                            });
+                        } else {
+                            saleDetailsProductsTableBody.append('<tr><td colspan="4" class="text-center">No hay productos en este pedido.</td></tr>');
+                        }
+                        saleDetailsModalContent.show();
+
+                        // Configurar el botón para abrir el modal de envío de WhatsApp
+                        const btnOpenSendMessage = saleDetailsModalElement.querySelector('#btnOpenSendMessageModal');
+                        if (btnOpenSendMessage) {
+                            const newBtnOpenSendMessage = btnOpenSendMessage.cloneNode(true);
+                            btnOpenSendMessage.parentNode.replaceChild(newBtnOpenSendMessage, btnOpenSendMessage);
+
+                            newBtnOpenSendMessage.addEventListener('click', async function() {
+                                if (!sendMessageModalInstance) return;
+
+                                currentCalendarEventDetails = { // Guardar datos para usar en el segundo modal
+                                    orderId: saleDetails.id,
+                                    customerName: saleDetails.customer_name,
+                                    billingPhone: saleDetails.billing_phone,
+                                    serviceName: saleDetails.line_items && saleDetails.line_items.length > 0 ? saleDetails.line_items[0].name : 'Servicio',
+                                    expiryDate: info.event.start // La fecha de inicio del evento del calendario es la de vencimiento
+                                };
+                                
+                                whatsappOrderIdInput.value = currentCalendarEventDetails.orderId;
+                                whatsappPhoneNumberInput.value = currentCalendarEventDetails.billingPhone || '';
+                                
+                                // Plantilla de mensaje usando saleDetails.customer_note si existe
+                                let messageTemplate = saleDetails.customer_note || `Estimado/a {cliente}, le recordamos que su servicio '{servicio}' (Pedido #{pedidoId}) vence el {fechaVence}.`;
+                                messageTemplate = messageTemplate.replace(/{cliente}/g, currentCalendarEventDetails.customerName || 'Cliente');
+                                messageTemplate = messageTemplate.replace(/{pedidoId}/g, currentCalendarEventDetails.orderId || 'N/A');
+                                messageTemplate = messageTemplate.replace(/{servicio}/g, currentCalendarEventDetails.serviceName || 'su servicio');
+                                const expiryDateFormatted = currentCalendarEventDetails.expiryDate ? new Date(currentCalendarEventDetails.expiryDate).toLocaleDateString('es-ES') : 'N/A';
+                                messageTemplate = messageTemplate.replace(/{fechaVence}/g, expiryDateFormatted);
+                                whatsappMessageTextInput.value = messageTemplate;
+
+                                // Cargar instancias de Evolution API
+                                evolutionInstanceSelect.innerHTML = '<option value="" selected disabled>Cargando instancias...</option>';
+                                try {
+                                    const instResponse = await fetch('/api/evolution/instances');
+                                    if (!instResponse.ok) {
+                                        const errData = await instResponse.json().catch(() => ({}));
+                                        throw new Error(errData.error || `Error ${instResponse.status} al cargar instancias.`);
+                                    }
+                                    const instances = await instResponse.json();
+                                    evolutionInstanceSelect.innerHTML = '<option value="" selected disabled>Seleccione una instancia</option>';
+                                    if (instances && instances.length > 0) {
+                                        instances.forEach(instName => {
+                                            const option = document.createElement('option');
+                                            option.value = instName;
+                                            option.textContent = instName;
+                                            evolutionInstanceSelect.appendChild(option);
+                                        });
+                                    } else {
+                                        evolutionInstanceSelect.innerHTML = '<option value="" selected disabled>No hay instancias activas</option>';
+                                    }
+                                } catch (err) {
+                                    console.error('Error cargando instancias de Evolution:', err);
+                                    evolutionInstanceSelect.innerHTML = `<option value="" selected disabled>Error al cargar instancias</option>`;
+                                    Swal.fire({title: 'Error', text: `No se pudieron cargar las instancias de Evolution API: ${err.message}`, icon: 'error', theme: 'dark'});
+                                }
+                                
+                                saleDetailsModalInstance.hide(); // Ocultar el primer modal
+                                sendMessageModalInstance.show(); // Mostrar el segundo modal
+                            });
+                        }
+
+                        if (btnConfirmSendWhatsApp && sendMessageModalInstance) {
+                            btnConfirmSendWhatsApp.addEventListener('click', async function() {
+                                const phoneNumber = whatsappPhoneNumberInput.value;
+                                const instanceName = evolutionInstanceSelect.value;
+                                let messageText = whatsappMessageTextInput.value;
+
+                                if (!phoneNumber || !instanceName || !messageText) {
+                                    Swal.fire({title: 'Error', text: 'Por favor, complete todos los campos: número, instancia y mensaje.', icon: 'error', theme: 'dark'});
+                                    return;
+                                }
+
+                                // Reemplazar placeholders
+                                messageText = messageText.replace(/{cliente}/g, currentCalendarEventDetails.customerName || 'Cliente');
+                                messageText = messageText.replace(/{pedidoId}/g, currentCalendarEventDetails.orderId || 'N/A');
+                                messageText = messageText.replace(/{servicio}/g, currentCalendarEventDetails.serviceName || 'su servicio');
+                                const expiryDateFormattedForMsg = currentCalendarEventDetails.expiryDate ? new Date(currentCalendarEventDetails.expiryDate).toLocaleDateString('es-ES') : 'N/A';
+                                messageText = messageText.replace(/{fechaVence}/g, expiryDateFormattedForMsg);
+
+                                try {
+                                    btnConfirmSendWhatsApp.disabled = true;
+                                    btnConfirmSendWhatsApp.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Enviando...';
+
+                                    const sendResponse = await fetch('/api/whatsapp/send-message', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            phoneNumber: phoneNumber,
+                                            messageText: messageText,
+                                            instanceName: instanceName,
+                                            orderId: currentCalendarEventDetails.orderId // Enviar orderId para posible logging
+                                        })
+                                    });
+
+                                    const sendResult = await sendResponse.json();
+
+                                    if (!sendResponse.ok || !sendResult.success) {
+                                        throw new Error(sendResult.error || `Error ${sendResponse.status} al enviar mensaje.`);
+                                    }
+
+                                    Swal.fire({title: 'Éxito', text: sendResult.message || 'Mensaje enviado correctamente.', icon: 'success', theme: 'dark'});
+                                    sendMessageModalInstance.hide();
+
+                                } catch (err) {
+                                    console.error('Error enviando mensaje de WhatsApp:', err);
+                                    Swal.fire({title: 'Error', text: `No se pudo enviar el mensaje: ${err.message}`, icon: 'error', theme: 'dark'});
+                                } finally {
+                                    btnConfirmSendWhatsApp.disabled = false;
+                                    btnConfirmSendWhatsApp.innerHTML = 'Enviar Mensaje Ahora';
+                                }
+                            });
+                        }
+
+                    } catch (error) {
+                        console.error('Error al obtener detalles de la venta desde el calendario:', error);
+                        saleDetailsModalLoading.hide();
+                        // Mostrar error dentro del modal
+                        const errorHtml = `<div class="alert alert-danger">Error al cargar detalles: ${error.message}</div>`;
+                        if (saleDetailsModalLoading.length) {
+                            saleDetailsModalLoading.html(errorHtml).show();
+                        } else {
+                             $('#saleDetailsModalContent').prepend(errorHtml).show();
+                        }
+                    }
+                } else if (info.event.extendedProps && info.event.extendedProps.order_url) { // Fallback si no hay order_id pero sí order_url
+                     Swal.fire({
                         title: info.event.title,
-                        html: `Cliente: ${info.event.extendedProps.customer_name || 'N/A'}<br>Vence: ${info.event.start.toLocaleDateString()}<br><a href="${info.event.extendedProps.order_url}" target="_blank" style="color: #0d6efd;">Ver Pedido</a>`,
+                        html: `Cliente: ${info.event.extendedProps.customer_name || 'N/A'}<br>Vence: ${info.event.start.toLocaleDateString()}<br><a href="${info.event.extendedProps.order_url}" target="_blank" style="color: #0d6efd;">Ver Pedido en WP</a>`,
                         icon: 'info',
                         theme: 'dark',
                         confirmButtonColor: '#0d6efd'

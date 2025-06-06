@@ -7,7 +7,9 @@ TVP-POS es una aplicación de Punto de Venta (POS) construida con Node.js y Expr
 *   **Interfaz de TPV (POS):** Búsqueda de productos, gestión de carrito, aplicación de cupones, procesamiento de ventas.
 *   **Gestión de Clientes:** Creación, edición, búsqueda y visualización de clientes. Los datos de facturación se sincronizan con los perfiles de usuario en WordPress.
 *   **Gestión de Usuarios (App):** Listado de usuarios de WordPress con paginación del lado del servidor, búsqueda, visualización de avatares, teléfonos e historial de compras (total de pedidos, ingresos, promedio por pedido). Funcionalidad para eliminar usuarios y ver sus ventas en un modal.
-*   **Historial de Ventas:** Listado de pedidos de WooCommerce con paginación del lado del servidor, búsqueda, y visualización de detalles del pedido (incluyendo productos) en un modal. Columna personalizada para "Tipo de Venta TPV".
+*   **Historial de Ventas:** Listado de pedidos de WooCommerce con paginación del lado del servidor, búsqueda (incluyendo búsqueda mejorada por teléfono del cliente), y visualización de detalles del pedido (incluyendo productos) en un modal. Columna personalizada para "Tipo de Venta TPV".
+*   **Impresión de Tickets:** Generación de tickets de venta en formato PDF (diseño para rollo de 80mm) directamente desde el historial de ventas.
+*   **Dashboard Inicial:** Visualización de contadores de estado de pedidos (En Proceso, En Espera, Completados) en la página de inicio.
 *   **Calendario de Eventos:** Visualización de eventos manuales y vencimientos de suscripciones (obtenidos de pedidos de WooCommerce marcados como suscripción).
 *   **Autenticación:** Sistema de login contra usuarios de WordPress, utilizando un token JWT para la sesión en la aplicación TPV.
 *   **Integración con WooCommerce:** A través de un plugin de WordPress (`tvp-pos-wp-connector`) que expone una API REST para manejar productos, clientes, ventas, cupones, etc.
@@ -34,6 +36,7 @@ El sistema se compone de tres partes principales:
 ## Tecnologías Utilizadas
 *   **Backend (Aplicación TPV):** Node.js, Express.js
 *   **Frontend (Aplicación TPV):** HTML, CSS, JavaScript, EJS, Bootstrap 5, DataTables, SweetAlert2, FullCalendar.
+*   **Generación de PDF (Aplicación TPV):** PDFKit.
 *   **Aplicación de Escritorio:** Electron, Electron Builder.
 *   **Backend (WordPress):** PHP, WordPress API REST, WooCommerce API.
 *   **Base de Datos:** La que utilice WordPress (generalmente MySQL/MariaDB).

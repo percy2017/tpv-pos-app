@@ -1,0 +1,143 @@
+<%- include('partials/header', { title: title }) %>
+<%- include('partials/navigation', { title: title }) %>
+
+<main class="container-fluid mt-4">
+    <div class="card">
+        <div class="card-header">
+            <h4 class="mb-0"><%= title %></h4>
+        </div>
+        <div class="card-body">
+            <p>Aquí se mostrarán los campos para configurar Evolution API, n8n y Socket.</p>
+            <form id="settingsForm">
+                <!-- Sección Evolution API -->
+                <fieldset class="mb-4">
+                    <legend class="h5">Configuración de Evolution API</legend>
+                    <div class="mb-3">
+                        <label for="evolutionApiUrl" class="form-label">URL Base de Evolution API</label>
+                        <input type="url" class="form-control" id="evolutionApiUrl" name="evolution_api_url" placeholder="https://ejemplo.com:8080">
+                    </div>
+                    <div class="mb-3">
+                        <label for="evolutionApiToken" class="form-label">API Key (Token)</label>
+                        <input type="text" class="form-control" id="evolutionApiToken" name="evolution_api_token" placeholder="Tu API Key">
+                    </div>
+                </fieldset>
+
+                <!-- Sección n8n -->
+                <fieldset class="mb-4">
+                    <legend class="h5">Configuración de n8n</legend>
+                    <div class="mb-3">
+                        <label for="n8nProductionUrl" class="form-label">URL de n8n (Producción)</label>
+                        <input type="url" class="form-control" id="n8nProductionUrl" name="n8n_production_url" placeholder="https://n8n.ejemplo.com">
+                    </div>
+                    <div class="mb-3">
+                        <label for="n8nTestingUrl" class="form-label">URL de n8n (Testing)</label>
+                        <input type="url" class="form-control" id="n8nTestingUrl" name="n8n_testing_url" placeholder="https://test.n8n.ejemplo.com">
+                    </div>
+                </fieldset>
+
+                <!-- Sección Socket -->
+                <fieldset class="mb-4">
+                    <legend class="h5">Configuración de Socket</legend>
+                    <div class="mb-3">
+                        <label for="socketUrl" class="form-label">URL del Servidor Socket</label>
+                        <input type="url" class="form-control" id="socketUrl" name="socket_url" placeholder="wss://socket.ejemplo.com">
+                    </div>
+                    <div class="mb-3">
+                        <label for="socketRoom" class="form-label">Room (Sala)</label>
+                        <input type="text" class="form-control" id="socketRoom" name="socket_room" placeholder="NombreDeLaSala">
+                    </div>
+                </fieldset>
+            </form>
+        </div>
+        <div class="card-footer text-end">
+            <button type="button" class="btn btn-primary" id="saveSettingsBtn">Guardar Configuraciones</button>
+        </div>
+    </div>
+</main>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const evolutionApiUrlInput = document.getElementById('evolutionApiUrl');
+    const evolutionApiTokenInput = document.getElementById('evolutionApiToken');
+    const n8nProductionUrlInput = document.getElementById('n8nProductionUrl');
+    const n8nTestingUrlInput = document.getElementById('n8nTestingUrl');
+    const socketUrlInput = document.getElementById('socketUrl');
+    const socketRoomInput = document.getElementById('socketRoom');
+    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+
+    // Cargar configuración existente
+    async function loadSettings() {
+        try {
+            const response = await fetch('/api/settings');
+            if (!response.ok) {
+                throw new Error(`Error al cargar configuración: ${response.statusText}`);
+            }
+            const config = await response.json();
+
+            if (config.evolution_api) {
+                evolutionApiUrlInput.value = config.evolution_api.url || '';
+                evolutionApiTokenInput.value = config.evolution_api.token || '';
+            }
+            if (config.n8n) {
+                n8nProductionUrlInput.value = config.n8n.production_url || '';
+                n8nTestingUrlInput.value = config.n8n.testing_url || '';
+            }
+            if (config.socket) {
+                socketUrlInput.value = config.socket.url || '';
+                socketRoomInput.value = config.socket.room || '';
+            }
+        } catch (error) {
+            console.error('Error al cargar la configuración:', error);
+            Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar la configuración.', theme:'dark' });
+        }
+    }
+
+    // Guardar configuración
+    saveSettingsBtn.addEventListener('click', async function() {
+        const settingsData = {
+            evolution_api: {
+                url: evolutionApiUrlInput.value.trim(),
+                token: evolutionApiTokenInput.value.trim()
+            },
+            n8n: {
+                production_url: n8nProductionUrlInput.value.trim(),
+                testing_url: n8nTestingUrlInput.value.trim()
+            },
+            socket: {
+                url: socketUrlInput.value.trim(),
+                room: socketRoomInput.value.trim()
+            }
+        };
+
+        try {
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(settingsData)
+            });
+
+            if (!response.ok) {
+                const errorResult = await response.json().catch(() => ({ error: `Error al guardar: ${response.statusText}` }));
+                throw new Error(errorResult.error || `Error ${response.status} al guardar la configuración.`);
+            }
+
+            const result = await response.json();
+            if (result.success) {
+                Swal.fire({ icon: 'success', title: 'Guardado', text: result.message, theme:'dark' });
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: result.error || 'No se pudo guardar la configuración.', theme:'dark' });
+            }
+        } catch (error) {
+            console.error('Error al guardar la configuración:', error);
+            Swal.fire({ icon: 'error', title: 'Error', text: error.message, theme:'dark' });
+        }
+    });
+
+    // Cargar la configuración al iniciar la página
+    loadSettings();
+});
+</script>
+
+<%- include('partials/footer') %>

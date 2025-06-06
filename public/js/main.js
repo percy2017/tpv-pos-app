@@ -114,10 +114,27 @@ $(document).ready(function() {
                     saleDetailsModalLoading.hide();
 
                     // Poblar información general
-                    modalSaleId.text(saleDetails.id);
+                    modalSaleId.text(saleDetails.id); // Aunque no tengamos un span #modalSaleId, lo mantenemos por si se usa para el botón de imprimir.
                     modalSaleDate.text(new Date(saleDetails.date_created).toLocaleString('es-ES'));
-                    modalSaleCustomer.text(saleDetails.customer_name || (saleDetails.customer_id ? `Cliente ID: ${saleDetails.customer_id}` : 'Invitado'));
-                    modalSaleCustomerEmail.text(saleDetails.billing_email || '-'); 
+                    
+                    let customerDisplayName = 'Invitado';
+                    if (saleDetails.billing_first_name || saleDetails.billing_last_name) {
+                        customerDisplayName = `${saleDetails.billing_first_name || ''} ${saleDetails.billing_last_name || ''}`.trim();
+                    } else if (saleDetails.customer_name) {
+                        customerDisplayName = saleDetails.customer_name;
+                    } else if (saleDetails.customer_id) {
+                        customerDisplayName = `Cliente ID: ${saleDetails.customer_id}`;
+                    }
+                    modalSaleCustomer.text(customerDisplayName);
+                    
+                    // Referencia al nuevo span para el teléfono y se elimina el de email
+                    const modalSaleCustomerPhone = $('#modalSaleCustomerPhone'); // Asegúrate que este ID exista en el HTML del modal en sales.ejs
+                    if (modalSaleCustomerPhone.length) {
+                        modalSaleCustomerPhone.text(saleDetails.billing_phone || '-');
+                    }
+                    // Ya no se usa modalSaleCustomerEmail si el HTML fue cambiado
+                    // modalSaleCustomerEmail.text(saleDetails.billing_email || '-'); 
+                    
                     modalSaleStatus.html(`<span class="badge bg-${getBootstrapStatusColor(saleDetails.status)}">${saleDetails.status ? saleDetails.status.replace('wc-', '') : 'desconocido'}</span>`);
                     modalSaleTotal.text(`${saleDetails.currency || ''} ${parseFloat(saleDetails.total || 0).toFixed(2)}`);
                     modalSalePaymentMethod.text(saleDetails.payment_method_title || saleDetails.payment_method || '-');
@@ -930,8 +947,26 @@ $(document).ready(function() {
             // Idealmente, al seleccionar, se debería hacer un fetch completo del cliente si es necesario.
             currentCustomerBilling = customer; 
 
-            selectedCustomerName.text(customer.name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim());
-            selectedCustomerEmail.text(customer.email || 'N/A'); // Mostrar email en la tarjeta
+            let customerDisplayNameTPV = 'Invitado';
+            if (customer.billing_first_name || customer.billing_last_name) {
+                customerDisplayNameTPV = `${customer.billing_first_name || ''} ${customer.billing_last_name || ''}`.trim();
+            } else if (customer.name) { // 'name' podría ser display_name
+                customerDisplayNameTPV = customer.name;
+            } else if (customer.first_name || customer.last_name) { // Fallback a first_name/last_name si billing_ no existen
+                 customerDisplayNameTPV = `${customer.first_name || ''} ${customer.last_name || ''}`.trim();
+            } else if (customer.id) {
+                customerDisplayNameTPV = `Cliente ID: ${customer.id}`;
+            }
+            selectedCustomerName.text(customerDisplayNameTPV);
+
+            // Usar el nuevo ID para el teléfono
+            const selectedCustomerPhoneEl = $('#selectedCustomerPhone'); 
+            if (selectedCustomerPhoneEl.length) {
+                selectedCustomerPhoneEl.text(customer.phone || customer.billing_phone || 'N/A');
+            }
+            // Ya no se usa selectedCustomerEmail si el HTML fue cambiado
+            // selectedCustomerEmail.text(customer.email || 'N/A'); 
+            
             // selectedCustomerAvatar.attr('src', customer.avatar_url || '/img/avatar_placeholder.png'); 
             customerSearchArea.addClass('d-none');
             selectedCustomerArea.removeClass('d-none');

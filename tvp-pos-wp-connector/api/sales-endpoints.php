@@ -268,6 +268,32 @@ function tvp_pos_get_single_sale_api( WP_REST_Request $request ) {
     }
 
     // Aquí podrías añadir más detalles, como los ítems del pedido, etc.
+    $customer_note_from_order = $order->get_customer_note();
+
+    if ( empty( $customer_note_from_order ) ) {
+        // Si la nota del cliente está vacía, intentar obtener la última nota privada o nota de administrador.
+        $order_notes = wc_get_order_notes( array(
+            'order_id' => $order_id,
+            'order_by' => 'date_created', // Obtener la más reciente primero
+            'order'    => 'DESC',
+        ) );
+
+        if ( ! empty( $order_notes ) ) {
+            foreach ( $order_notes as $note ) {
+                // Queremos una nota que no sea del sistema y que sea privada o para el cliente (pero no la customer_note original si estaba vacía)
+                // 'is_customer_note' = 1 es una nota para el cliente (que no es la customer_note principal)
+                // 'added_by' != 'system' para excluir notas automáticas.
+                if ( ! $note->added_by || strtolower($note->added_by) !== 'system' ) {
+                     // Si es una nota privada (added_by es un usuario) o una nota explícitamente para el cliente
+                    if ( $note->is_customer_note || ( $note->added_by && strtolower($note->added_by) !== 'woocommerce' ) ) {
+                        $customer_note_from_order = $note->content;
+                        break; // Usar la primera nota relevante encontrada (la más reciente)
+                    }
+                }
+            }
+        }
+    }
+
     $sale_detail = array(
         'id'            => $order->get_id(),
         'order_key'     => $order->get_order_key(),
@@ -276,7 +302,9 @@ function tvp_pos_get_single_sale_api( WP_REST_Request $request ) {
         'total'         => floatval( $order->get_total() ),
         'currency'      => $order->get_currency(),
         'customer_id'   => $order->get_customer_id(),
-        'customer_name' => $customer_name,
+        'customer_name' => $customer_name, // Este es el display_name o 'Invitado'
+        'billing_first_name' => $order->get_billing_first_name(),
+        'billing_last_name' => $order->get_billing_last_name(),
         'billing_address' => $order->get_formatted_billing_address() ? $order->get_formatted_billing_address() : 'N/A',
         'shipping_address' => $order->get_formatted_shipping_address() ? $order->get_formatted_shipping_address() : 'N/A',
         'line_items'    => array_map(function($item){
@@ -292,8 +320,9 @@ function tvp_pos_get_single_sale_api( WP_REST_Request $request ) {
             );
         }, $order->get_items()),
         'payment_method_title' => $order->get_payment_method_title(),
-        'customer_note' => $order->get_customer_note(),
-        'billing_email' => $order->get_billing_email(), // Ya estaba en la lista de ventas, pero asegurar aquí también
+        'customer_note' => $customer_note_from_order, // Usar la nota obtenida (original o del historial)
+        'billing_email' => $order->get_billing_email(),
+        'billing_phone' => $order->get_billing_phone(), // <-- AÑADIDO TELÉFONO DE FACTURACIÓN AQUÍ
         // ... más detalles
     );
     error_log('[TVP-POS DEBUG] sales-endpoints.php - tvp_pos_get_single_sale_api - Sale Detail: ' . print_r($sale_detail, true));

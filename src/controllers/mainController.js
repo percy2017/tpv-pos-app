@@ -1,9 +1,39 @@
 import PDFDocument from 'pdfkit';
+import fs from 'fs/promises';
+import path from 'path';
 // Asumimos que getWPSaleById se exporta desde wpApiService.js y se puede importar así.
 // Si está dentro de un import() dinámico, la estrategia para usarla aquí necesitará ajuste.
 // Por ahora, para la estructura:
 import { getWPSaleById, getWPOrderStatusCounts } from '../services/wpApiService.js'; // Añadido getWPOrderStatusCounts
 
+const APP_CONFIG_PATH = path.join(process.cwd(), 'data', 'app-config.json');
+
+// Helper para leer la configuración
+async function readAppSettings() {
+    try {
+        const data = await fs.readFile(APP_CONFIG_PATH, 'utf-8');
+        return JSON.parse(data);
+    } catch (error) {
+        // Si el archivo no existe o hay error al parsear, devolver un objeto por defecto o lanzar error
+        console.error('Error al leer app-config.json:', error);
+        // Devolver una estructura por defecto para evitar errores en la carga inicial si el archivo no existe
+        return {
+            evolution_api: { url: "", token: "" },
+            n8n: { production_url: "", testing_url: "" },
+            socket: { url: "", room: "" }
+        };
+    }
+}
+
+// Helper para escribir la configuración
+async function writeAppSettings(config) {
+    try {
+        await fs.writeFile(APP_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+    } catch (error) {
+        console.error('Error al escribir en app-config.json:', error);
+        throw error; // Re-lanzar para que el controlador lo maneje
+    }
+}
 
 export const showDashboard = async (req, res) => { // Convertido a async
     const wpSiteUrl = req.session.wp_site_url;
@@ -826,6 +856,102 @@ export const apiGetCalendarEvents = async (req, res) => {
 // --- Controlador para la Vista del Calendario ---
 export const showCalendarView = (req, res) => {
     res.render('calendar', { title: 'Calendario de Vencimientos' });
+};
+
+// --- Controlador para la Vista de Configuración ---
+export const showSettingsPage = async (req, res) => { // <--- AÑADIDO ASYNC AQUÍ
+    console.log('[DEBUG] Dentro del controlador showSettingsPage');
+    // Por ahora, solo renderizamos la vista.
+    // Más adelante, cargaremos la configuración existente para pasarla a la vista.
+    // Ahora sí cargamos la config para la vista:
+    try {
+        const config = await readAppSettings();
+        res.render('settings', { 
+            title: 'Configuración General',
+            config: config 
+        });
+    } catch (error) {
+        res.status(500).send('Error al cargar la página de configuración.');
+    }
+};
+
+// --- API Endpoints para Configuración General ---
+export const getAppSettings = async (req, res) => {
+    try {
+        const config = await readAppSettings();
+        res.json(config);
+    } catch (error) {
+        res.status(500).json({ error: 'Error al leer la configuración.' });
+    }
+};
+
+export const saveAppSettings = async (req, res) => {
+    try {
+        const newConfig = req.body;
+        // Aquí se podría añadir validación de los datos recibidos en newConfig
+        // Por ejemplo, asegurar que las URLs son válidas, etc.
+        await writeAppSettings(newConfig);
+        res.json({ success: true, message: 'Configuración guardada exitosamente.' });
+    } catch (error) {
+        res.status(500).json({ error: 'Error al guardar la configuración.' });
+    }
+};
+
+// --- API Endpoints para Evolution API ---
+import { 
+    getEvolutionInstances as getEvoInstancesService,
+    sendWhatsAppMessage as sendEvoWhatsAppMessageService
+} from '../services/evolutionApiService.js';
+
+export const getEvolutionApiInstances = async (req, res) => {
+    try {
+        const appConfig = await readAppSettings();
+        if (!appConfig.evolution_api || !appConfig.evolution_api.url || !appConfig.evolution_api.token) {
+            return res.status(500).json({ error: 'La configuración de Evolution API (URL y Token) no está completa.' });
+        }
+
+        const instances = await getEvoInstancesService(appConfig.evolution_api.url, appConfig.evolution_api.token);
+        res.json(instances);
+    } catch (error) {
+        console.error('Error en getEvolutionApiInstances:', error.message);
+        res.status(500).json({ error: error.message || 'Error al obtener las instancias de Evolution API.' });
+    }
+};
+
+export const sendWhatsAppMessageController = async (req, res) => {
+    try {
+        const { phoneNumber, messageText, instanceName, orderId } = req.body; // orderId es opcional, para logging o futuras referencias
+
+        if (!phoneNumber || !messageText || !instanceName) {
+            return res.status(400).json({ error: 'Faltan parámetros: phoneNumber, messageText o instanceName son requeridos.' });
+        }
+
+        const appConfig = await readAppSettings();
+        if (!appConfig.evolution_api || !appConfig.evolution_api.url || !appConfig.evolution_api.token) {
+            return res.status(500).json({ error: 'La configuración de Evolution API (URL y Token) no está completa.' });
+        }
+
+        console.log(`[WhatsApp Controller] Intentando enviar mensaje a ${phoneNumber} via instancia ${instanceName}. Pedido: ${orderId || 'N/A'}`);
+        
+        // Aquí podrías añadir lógica para reemplazar placeholders en messageText si es necesario
+        // Por ejemplo, si messageText es "Hola {cliente}, tu pedido {pedidoId}..."
+        // y tienes esos datos, los reemplazarías antes de enviar.
+
+        const evolutionResponse = await sendEvoWhatsAppMessageService(
+            appConfig.evolution_api.url,
+            appConfig.evolution_api.token,
+            instanceName,
+            phoneNumber,
+            messageText
+            // Podrías pasar 'options' adicionales si las necesitas
+        );
+
+        res.json({ success: true, message: 'Mensaje enviado (o en proceso de envío) a través de Evolution API.', data: evolutionResponse });
+
+    } catch (error) {
+        console.error('Error en sendWhatsAppMessageController:', error.message);
+        res.status(500).json({ error: error.message || 'Error al enviar el mensaje de WhatsApp.' });
+    }
 };
 
 // --- API para Cupones y Ventas TPV ---

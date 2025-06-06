@@ -50,6 +50,23 @@ router.get('/api/wp-subscription-events', isAuthenticated, mainController.apiGet
 // Ruta para la vista del calendario (esta sí requiere autenticación para ver la página)
 router.get('/calendar', isAuthenticated, mainController.showCalendarView);
 
+// Ruta para la página de Configuración
+router.get('/settings', (req, res, next) => {
+    console.log('[DEBUG] Accediendo a la ruta /settings');
+    next();
+}, isAuthenticated, mainController.showSettingsPage);
+
+// API endpoints para la Configuración General
+router.get('/api/settings', isAuthenticated, mainController.getAppSettings);
+router.post('/api/settings', isAuthenticated, mainController.saveAppSettings);
+
+// API endpoints para Evolution API
+router.get('/api/evolution/instances', (req, res, next) => {
+    console.log('[DEBUG] Accediendo a la ruta /api/evolution/instances');
+    next();
+}, isAuthenticated, mainController.getEvolutionApiInstances);
+router.post('/api/whatsapp/send-message', isAuthenticated, mainController.sendWhatsAppMessageController);
+
 // API endpoint para validar cupones
 router.post('/api/validate-coupon', isAuthenticated, mainController.apiValidateCoupon);
 

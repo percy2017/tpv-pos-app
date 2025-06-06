@@ -12,19 +12,24 @@
             <div class="offcanvas-body">
                 <ul class="navbar-nav justify-content-end flex-grow-1 pe-3">
                     <li class="nav-item">
-                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Dashboard' ? 'active' : '' %>" aria-current="page" href="/">Inicio</a>
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Dashboard' ? 'active' : '' %>" aria-current="page" href="/"><i class="bi bi-house-door-fill me-2"></i>Inicio</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'TPV' ? 'active' : '' %>" href="/pos">TPV</a>
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'TPV' ? 'active' : '' %>" href="/pos"><i class="bi bi-pc-display-horizontal me-2"></i>TPV</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Ventas' ? 'active' : '' %>" href="/sales">Ventas</a>
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Ventas' ? 'active' : '' %>" href="/sales"><i class="bi bi-receipt-cutoff me-2"></i>Ventas</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Usuarios' ? 'active' : '' %>" href="/users">Usuarios</a>
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Usuarios' ? 'active' : '' %>" href="/users"><i class="bi bi-people-fill me-2"></i>Usuarios</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Calendario de Vencimientos' ? 'active' : '' %>" href="/calendar">Calendario</a>
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Calendario de Vencimientos' ? 'active' : '' %>" href="/calendar"><i class="bi bi-calendar-week-fill me-2"></i>Calendario</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link <%= typeof title !== 'undefined' && title === 'Configuración General' ? 'active' : '' %>" href="/settings">
+                            <i class="bi bi-gear-fill me-2"></i>Configuración
+                        </a>
                     </li>
                     <!-- Agrega más elementos de navegación aquí según sea necesario -->
                     <!--

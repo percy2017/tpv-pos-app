@@ -1,0 +1,14 @@
+{
+  "evolution_api": {
+    "url": "https://evolution.iptvbolivia.com",
+    "token": "whatsapp2025"
+  },
+  "n8n": {
+    "production_url": "",
+    "testing_url": ""
+  },
+  "socket": {
+    "url": "",
+    "room": ""
+  }
+}
