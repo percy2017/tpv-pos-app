@@ -56,16 +56,32 @@ router.get('/settings', (req, res, next) => {
     next();
 }, isAuthenticated, mainController.showSettingsPage);
 
-// API endpoints para la Configuración General
-router.get('/api/settings', isAuthenticated, mainController.getAppSettings);
-router.post('/api/settings', isAuthenticated, mainController.saveAppSettings);
+// Ruta para la página de Mensajería Masiva WhatsApp
+router.get('/whatsapp-bulk', isAuthenticated, mainController.showWhatsAppBulkPage);
 
-// API endpoints para Evolution API
+// Ruta para la página de Biblioteca Multimedia
+router.get('/media', isAuthenticated, mainController.showMediaPage);
+
+// API endpoint para obtener multimedia de Chatwoot
+router.get('/api/chatwoot-media', isAuthenticated, mainController.apiGetChatwootMediaItems);
+// API endpoint para obtener etiquetas de Chatwoot
+router.get('/api/chatwoot/labels', isAuthenticated, mainController.apiGetChatwootLabelsController);
+
+// API endpoints para WhatsApp (Evolution API y Envíos Masivos)
 router.get('/api/evolution/instances', (req, res, next) => {
     console.log('[DEBUG] Accediendo a la ruta /api/evolution/instances');
     next();
 }, isAuthenticated, mainController.getEvolutionApiInstances);
 router.post('/api/whatsapp/send-message', isAuthenticated, mainController.sendWhatsAppMessageController);
+router.post('/api/whatsapp/start-bulk-campaign', isAuthenticated, mainController.apiStartBulkCampaign);
+router.get('/api/whatsapp/bulk-campaigns', isAuthenticated, mainController.apiGetBulkCampaigns); 
+router.delete('/api/whatsapp/bulk-campaigns/:campaignId', isAuthenticated, mainController.apiDeleteBulkCampaign);
+router.post('/api/whatsapp/bulk-campaigns/:campaignId/pause', isAuthenticated, mainController.apiPauseBulkCampaign); // Nueva ruta para pausar
+router.post('/api/whatsapp/bulk-campaigns/:campaignId/resume', isAuthenticated, mainController.apiResumeBulkCampaign); // Nueva ruta para reanudar
+router.post('/api/whatsapp/bulk-campaigns/:campaignId/start', isAuthenticated, mainController.apiManuallyStartBulkCampaign); // Nueva ruta para iniciar manually
+router.get('/api/whatsapp/bulk-campaigns/:campaignId/details', isAuthenticated, mainController.apiGetBulkCampaignDetails); // Nueva ruta para obtener detalles de campaña
+router.put('/api/whatsapp/bulk-campaigns/:campaignId', isAuthenticated, mainController.apiUpdateBulkCampaign); // Nueva ruta para actualizar campaña
+router.post('/api/whatsapp/bulk-campaigns/:campaignId/reset', isAuthenticated, mainController.apiResetBulkCampaign); // Nueva ruta para reiniciar campaña
 
 // API endpoint para validar cupones
 router.post('/api/validate-coupon', isAuthenticated, mainController.apiValidateCoupon);
@@ -75,5 +91,9 @@ router.post('/api/process-sale', isAuthenticated, mainController.apiProcessSale)
 
 // router.get('/products', isAuthenticated, mainController.showProducts); // Para el futuro
 // router.get('/customers', isAuthenticated, mainController.showCustomers); // Para el futuro
+
+// API endpoints para la configuración de la aplicación
+router.get('/api/settings', isAuthenticated, mainController.getAppSettings);
+router.post('/api/settings', isAuthenticated, mainController.saveAppSettings);
 
 export default router;

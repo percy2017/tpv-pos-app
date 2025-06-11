@@ -8,7 +8,12 @@
     "testing_url": ""
   },
   "socket": {
-    "url": "",
-    "room": ""
+    "url": "https://socket.percyalvarez.com",
+    "room": "pos-tvp-2025"
+  },
+  "chatwoot_api": {
+    "url": "https://chatwoot.iptvbolivia.com",
+    "account_id": "1",
+    "token": "yphoCJBPeWbjXjAQP16P64z5"
   }
 }

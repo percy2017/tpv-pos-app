@@ -20,7 +20,8 @@ async function readAppSettings() {
         return {
             evolution_api: { url: "", token: "" },
             n8n: { production_url: "", testing_url: "" },
-            socket: { url: "", room: "" }
+            socket: { url: "", room: "" },
+            chatwoot_api: { url: "", account_id: "", token: "" }
         };
     }
 }
@@ -50,12 +51,7 @@ export const showDashboard = async (req, res) => { // Convertido a async
             dashboardData.orderCounts = await getWPOrderStatusCounts(wpSiteUrl, apiToken);
             if (dashboardData.orderCounts.error) {
                 console.warn("Error parcial al cargar datos del dashboard (orderCounts):", dashboardData.orderCounts);
-                // No sobreescribir el error principal si otros datos sí cargan.
             }
-
-            // Aquí se llamarían a otras funciones para obtener más datos del dashboard
-            // ej: dashboardData.salesSummary = await getWPSalesSummary(wpSiteUrl, apiToken);
-
         } catch (error) {
             console.error("Error al cargar datos para el dashboard:", error.message);
             dashboardData.error = 'No se pudieron cargar algunos datos del dashboard desde WordPress.';
@@ -88,7 +84,6 @@ export const showPos = async (req, res) => {
         posPageError = 'No se pudo conectar al sitio de WordPress. Por favor, inicia sesión de nuevo.';
     } else {
         try {
-            // Cargar productos
             const { getWPProducts, getWPPaymentGateways } = await import('../services/wpApiService.js');
             let productsResult;
             const perPage = 20; 
@@ -102,17 +97,12 @@ export const showPos = async (req, res) => {
 
             if (productsData.length === 0 && searchTerm) {
                 posPageError = `No se encontraron productos para "${searchTerm}".`;
-            } else if (productsData.length === 0 && !searchTerm) {
-                // No establecer error si no hay destacados, simplemente no se muestran
-                // posPageError = 'No hay productos destacados para mostrar.'; 
             }
-
-            // Cargar pasarelas de pago
+            
             try {
                 paymentGatewaysData = await getWPPaymentGateways(wpSiteUrl, apiToken);
             } catch (pgError) {
                 console.error("Error en mainController.showPos al obtener pasarelas de pago:", pgError.message);
-                // No sobrescribir el error de productos si ya existe, pero podríamos añadir un mensaje específico
                 if (!posPageError) {
                     posPageError = 'No se pudieron cargar las pasarelas de pago.';
                 } else {
@@ -120,7 +110,7 @@ export const showPos = async (req, res) => {
                 }
             }
 
-        } catch (prodError) { // Error al cargar productos
+        } catch (prodError) { 
             console.error("Error en mainController.showPos al obtener productos:", prodError.message);
             posPageError = 'No se pudieron cargar los productos desde WordPress.';
             if (prodError.response && prodError.response.status === 401) {
@@ -128,7 +118,6 @@ export const showPos = async (req, res) => {
             } else if (prodError.response && prodError.response.status === 403) {
                 posPageError = 'No tienes permiso para ver los productos.';
             }
-            // Intentar cargar pasarelas incluso si fallan los productos
             try {
                 const { getWPPaymentGateways } = await import('../services/wpApiService.js');
                 paymentGatewaysData = await getWPPaymentGateways(wpSiteUrl, apiToken);
@@ -144,7 +133,7 @@ export const showPos = async (req, res) => {
         products: productsData,
         paymentGateways: paymentGatewaysData,
         search: searchTerm, 
-        error: posPageError // Pasar el error acumulado
+        error: posPageError
     });
 };
 
@@ -152,9 +141,6 @@ export const searchProductsApi = async (req, res) => {
     const wpSiteUrl = req.session.wp_site_url;
     const apiToken = req.session.api_token;
     const searchTerm = req.query.search || '';
-    // El parámetro 'featured' podría venir como string 'true'/'false' o no estar.
-    // Lo convertimos a booleano, default a false si no se especifica para búsqueda.
-    // Si searchTerm está vacío, podríamos querer devolver destacados por defecto.
     let featuredSearch = req.query.featured === 'true';
 
     if (!wpSiteUrl || !apiToken) {
@@ -162,12 +148,6 @@ export const searchProductsApi = async (req, res) => {
     }
 
     if (!searchTerm && !featuredSearch) {
-        // Si no hay término de búsqueda y no se piden explícitamente destacados,
-        // podríamos devolver una lista vacía o un error, o los destacados por defecto.
-        // Por ahora, si no hay search, asumimos que se quieren destacados si no se especifica featured=false.
-        // O, si la UI siempre pasa 'featured' o 'search', este caso es menos probable.
-        // Para la búsqueda desde el TPV, si searchTerm está vacío, no deberíamos buscar nada o devolver favoritos.
-        // Vamos a asumir que si no hay searchTerm, el frontend quiere los favoritos.
         if (!searchTerm) {
             featuredSearch = true; 
         }
@@ -175,7 +155,7 @@ export const searchProductsApi = async (req, res) => {
     
     try {
         const { getWPProducts } = await import('../services/wpApiService.js');
-        const perPage = parseInt(req.query.per_page) || 20; // Productos por página
+        const perPage = parseInt(req.query.per_page) || 20; 
         const page = parseInt(req.query.page) || 1;
 
         const productsResult = await getWPProducts(wpSiteUrl, apiToken, page, perPage, searchTerm, featuredSearch);
@@ -198,7 +178,7 @@ export const searchProductsApi = async (req, res) => {
             } else if (error.response.status === 403) {
                 errorMessage = 'No tienes permiso para ver los productos.';
             } else if (error.response.data && error.response.data.message) {
-                errorMessage = error.response.data.message; // Usar mensaje de error de la API de WP si está disponible
+                errorMessage = error.response.data.message;
             }
         }
         res.status(statusCode).json({ error: errorMessage });
@@ -210,847 +190,1116 @@ export const getSaleTicketPDF = async (req, res) => {
     const apiToken = req.session.api_token;
     const saleId = req.params.id;
 
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ error: 'Autenticación requerida.' });
-    }
-    if (!saleId) {
-        return res.status(400).json({ error: 'Se requiere ID de la venta.' });
-    }
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ error: 'Autenticación requerida.' });
+    if (!saleId) return res.status(400).json({ error: 'Se requiere ID de la venta.' });
 
     try {
-        // Obtener detalles de la venta usando el servicio existente
-        // Nota: getWPSaleById es async, así que usamos await.
-        // Asegúrate de que la función getWPSaleById esté disponible y funcione como se espera.
         const saleDetails = await getWPSaleById(wpSiteUrl, apiToken, saleId);
-
-        console.log(`[PDF Ticket DEBUG] saleDetails para ID ${saleId}:`, JSON.stringify(saleDetails, null, 2));
-
-        if (!saleDetails) {
-            console.error(`[PDF Ticket ERROR] No se encontraron detalles para la venta ID ${saleId}`);
-            return res.status(404).send('Venta no encontrada');
-        }
-
-        const doc = new PDFDocument({
-            size: [226.77, 841.89], // Ancho de 80mm (226.77 pt) y altura larga
-            margins: { top: 10, bottom: 10, left: 5, right: 5 } // Márgenes ajustados para ticket
-        });
-
+        if (!saleDetails) return res.status(404).send('Venta no encontrada');
+        
+        const doc = new PDFDocument({ size: [226.77, 841.89], margins: { top: 10, bottom: 10, left: 5, right: 5 } });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="ticket-${saleId}.pdf"`);
-
         doc.pipe(res);
-
-        // Contenido del Ticket
-        doc.fontSize(10).text('Mi Tienda POS', { align: 'center' });
-        if (saleDetails.billing_address) { // Ejemplo, si tienes datos de la tienda
-             // doc.fontSize(8).text(saleDetails.store_address_line_1, { align: 'center' });
-             // doc.fontSize(8).text(saleDetails.store_phone, { align: 'center' });
-        }
-        doc.moveDown(0.5);
-        doc.fontSize(8).text(`Ticket ID: ${saleDetails.id}`, { align: 'left' });
-        doc.text(`Fecha: ${new Date(saleDetails.date_created).toLocaleString()}`, { align: 'left' });
-        doc.text(`Cliente: ${saleDetails.customer_name || 'Invitado'}`, { align: 'left' });
-        if(saleDetails.billing_phone){
-            doc.text(`Tel: ${saleDetails.billing_phone}`, { align: 'left' });
-        }
+        doc.fontSize(10).text('Mi Tienda POS', { align: 'center' }).moveDown(0.5);
+        doc.fontSize(8).text(`Ticket ID: ${saleDetails.id}`, { align: 'left' })
+           .text(`Fecha: ${new Date(saleDetails.date_created).toLocaleString()}`, { align: 'left' })
+           .text(`Cliente: ${saleDetails.customer_name || 'Invitado'}`, { align: 'left' });
+        if(saleDetails.billing_phone) doc.text(`Tel: ${saleDetails.billing_phone}`, { align: 'left' });
         doc.moveDown();
-        // Línea separadora simple
         const lineWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-        doc.lineCap('butt').moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke();
-        doc.moveDown(0.5);
-
-        // Definición de columnas para ítems (80mm de ancho de página ~ 226 puntos)
-        // Márgenes son 5pt a cada lado, así que el área útil es ~216 pt.
+        doc.lineCap('butt').moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke().moveDown(0.5);
+        
         const availableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-        const colWidthQty = 35;
-        const colWidthTotalItem = 50;
-        const colWidthProduct = availableWidth - colWidthQty - colWidthTotalItem - 10; // -10 para pequeños espacios entre columnas
-
-        const colProductX = doc.page.margins.left;
-        const colQtyX = colProductX + colWidthProduct + 5;
-        const colTotalItemX = colQtyX + colWidthQty + 5;
-
+        const colWidthQty = 35, colWidthTotalItem = 50, colWidthProduct = availableWidth - colWidthQty - colWidthTotalItem - 10;
+        const colProductX = doc.page.margins.left, colQtyX = colProductX + colWidthProduct + 5, colTotalItemX = colQtyX + colWidthQty + 5;
+        
         doc.fontSize(8);
         const headerY = doc.y;
-        doc.text('Producto', colProductX, headerY, { width: colWidthProduct, align: 'left' });
-        doc.text('Cant.', colQtyX, headerY, { width: colWidthQty, align: 'right' });
-        doc.text('Total', colTotalItemX, headerY, { width: colWidthTotalItem, align: 'right' });
-        doc.moveDown(1.5); // Más espacio después de cabeceras
-        
-        // Línea después de cabeceras
-        doc.lineCap('butt').moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke();
-        doc.moveDown(0.5);
-        
-        // Ítems
+        doc.text('Producto', colProductX, headerY, { width: colWidthProduct, align: 'left' })
+           .text('Cant.', colQtyX, headerY, { width: colWidthQty, align: 'right' })
+           .text('Total', colTotalItemX, headerY, { width: colWidthTotalItem, align: 'right' });
+        doc.moveDown(1.5).lineCap('butt').moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke().moveDown(0.5);
+
         if (saleDetails.line_items && Array.isArray(saleDetails.line_items) && saleDetails.line_items.length > 0) {
             saleDetails.line_items.forEach(item => {
                 doc.fontSize(7);
                 const itemStartY = doc.y;
-                
-                // Dibujar nombre del producto (puede ocupar varias líneas)
                 doc.text(item.name, colProductX, itemStartY, { width: colWidthProduct, align: 'left' });
-                // Calcular la altura que ocupó el nombre del producto
                 const productNameHeight = doc.heightOfString(item.name, { width: colWidthProduct, align: 'left' });
-
-                // Dibujar cantidad y total en la misma línea Y inicial del nombre
                 doc.text(item.quantity.toString(), colQtyX, itemStartY, { width: colWidthQty, align: 'right' });
                 doc.text(parseFloat(item.total).toFixed(2), colTotalItemX, itemStartY, { width: colWidthTotalItem, align: 'right' });
-                
-                // Avanzar Y basado en la altura del elemento más alto de la fila (usualmente el nombre del producto)
-                doc.y = itemStartY + productNameHeight + 3; // +3 para un pequeño margen inferior
+                doc.y = itemStartY + productNameHeight + 3; 
             });
         } else {
-            doc.moveDown(0.5);
-            doc.fontSize(8).text('No hay productos detallados en este pedido.', { align: 'center', width: availableWidth });
-            console.warn(`[PDF Ticket WARN] Venta ID ${saleId}: No se encontraron line_items o no es un array. Contenido de line_items:`, saleDetails.line_items);
+            doc.moveDown(0.5).fontSize(8).text('No hay productos detallados.', { align: 'center', width: availableWidth });
         }
-        doc.moveDown(0.5);
-        doc.lineCap('butt').moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke();
-        doc.moveDown(0.5);
+        doc.moveDown(0.5).lineCap('butt').moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke().moveDown(0.5);
 
-        // Totales
-        const totalsLabelX = doc.page.margins.left + 80; // Ajustar para que las etiquetas queden más a la izquierda
-        const totalsAmountX = doc.page.width - doc.page.margins.right - colWidthTotalItem; // Alinear montos con la columna de total de ítems
-        const totalsWidth = colWidthTotalItem; // Ancho para los montos
-
-        let subtotalForCalc = 0;
-        if (saleDetails.line_items && Array.isArray(saleDetails.line_items)) {
-            subtotalForCalc = saleDetails.line_items.reduce((acc, item) => acc + parseFloat(item.total || 0), 0);
-        }
-        // Si el subtotal viene de WooCommerce (ej. saleDetails.subtotal), usar ese.
-        // Aquí asumimos que el subtotal es la suma de los totales de línea antes de impuestos de pedido.
-        // WooCommerce a veces calcula 'subtotal' de forma diferente.
-        // Por ahora, usaremos la suma de los totales de línea como subtotal visible si no hay impuestos de pedido.
-        // Si hay impuestos de pedido, el 'total' de la venta ya los incluye.
-        // El campo 'total_tax' de WooCommerce es el impuesto total del pedido.
-        // El 'total' del pedido es subtotal_items - descuentos_items + impuestos_items + fees + shipping_total + impuestos_shipping - descuentos_pedido.
-
-        const displaySubtotal = saleDetails.total - (saleDetails.total_tax || 0); // Un subtotal antes de impuestos de pedido
-
-        doc.fontSize(8);
-        doc.text('SUBTOTAL:', totalsLabelX, doc.y, { width: 60, align: 'right' }); // Ancho para la etiqueta
-        doc.text(`${saleDetails.currency} ${parseFloat(displaySubtotal).toFixed(2)}`, totalsAmountX, doc.y, { width: totalsWidth, align: 'right' });
-        doc.moveDown(0.3);
-
+        const totalsLabelX = doc.page.margins.left + 80, totalsAmountX = doc.page.width - doc.page.margins.right - colWidthTotalItem, totalsWidth = colWidthTotalItem;
+        const displaySubtotal = saleDetails.total - (saleDetails.total_tax || 0);
+        doc.fontSize(8).text('SUBTOTAL:', totalsLabelX, doc.y, { width: 60, align: 'right' })
+           .text(`${saleDetails.currency} ${parseFloat(displaySubtotal).toFixed(2)}`, totalsAmountX, doc.y, { width: totalsWidth, align: 'right' }).moveDown(0.3);
         if (saleDetails.total_tax && parseFloat(saleDetails.total_tax) > 0) {
-            doc.text('IMPUESTOS:', totalsLabelX, doc.y, { width: 60, align: 'right' });
-            doc.text(`${saleDetails.currency} ${parseFloat(saleDetails.total_tax).toFixed(2)}`, totalsAmountX, doc.y, { width: totalsWidth, align: 'right' });
-            doc.moveDown(0.3);
+            doc.text('IMPUESTOS:', totalsLabelX, doc.y, { width: 60, align: 'right' })
+               .text(`${saleDetails.currency} ${parseFloat(saleDetails.total_tax).toFixed(2)}`, totalsAmountX, doc.y, { width: totalsWidth, align: 'right' }).moveDown(0.3);
         }
-        
-        doc.fontSize(10).font('Helvetica-Bold');
-        doc.text('TOTAL:', totalsLabelX, doc.y, { width: 60, align: 'right' });
-        doc.text(`${saleDetails.currency} ${parseFloat(saleDetails.total).toFixed(2)}`, totalsAmountX, doc.y, { width: totalsWidth, align: 'right' });
-        doc.font('Helvetica'); // Reset font
-        doc.moveDown();
-        
-        if (saleDetails.payment_method_title) {
-            doc.fontSize(8).text(`Pagado con: ${saleDetails.payment_method_title}`, { align: 'center' });
-            doc.moveDown(0.5);
-        }
-
+        doc.fontSize(10).font('Helvetica-Bold').text('TOTAL:', totalsLabelX, doc.y, { width: 60, align: 'right' })
+           .text(`${saleDetails.currency} ${parseFloat(saleDetails.total).toFixed(2)}`, totalsAmountX, doc.y, { width: totalsWidth, align: 'right' }).font('Helvetica').moveDown();
+        if (saleDetails.payment_method_title) doc.fontSize(8).text(`Pagado con: ${saleDetails.payment_method_title}`, { align: 'center' }).moveDown(0.5);
         doc.fontSize(8).text('¡Gracias por su compra!', { align: 'center' });
-        if (saleDetails.customer_note) {
-            doc.moveDown();
-            doc.fontSize(7).text('Nota:', { align: 'center' });
-            doc.fontSize(7).text(saleDetails.customer_note, { align: 'center', width: lineWidth });
-        }
-
+        if (saleDetails.customer_note) doc.moveDown().fontSize(7).text('Nota:', { align: 'center' }).text(saleDetails.customer_note, { align: 'center', width: lineWidth });
         doc.end();
-
     } catch (error) {
-        console.error("Error generando PDF del ticket:", error.message, error.stack);
-        if (!res.headersSent) {
-            res.status(500).send('Error al generar el PDF del ticket');
-        }
+        console.error(`[API] Error al eliminar la campaña ${campaignFileName}:`, error);
+        res.status(500).json({ success: false, message: 'Error interno del servidor al eliminar la campaña.' });
     }
 };
 
-export const showSales = async (req, res) => {
-    console.log('--- EJECUTANDO showSales ---'); 
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-    
-    if (!wpSiteUrl || !apiToken) {
-        console.error('Falta wp_site_url o api_token en la sesión para cargar ventas.');
-        return res.render('sales', { 
-            title: 'Ventas', 
-            sales: [], 
-            error: 'No se pudo conectar al sitio de WordPress. Por favor, inicia sesión de nuevo.',
-            currentPage: 1,
-            totalPages: 0
-        });
-    }
-    // Para DataTables server-side, la vista inicial no necesita cargar datos.
-    // DataTables hará una petición AJAX.
-    res.render('sales', { 
-        title: 'Historial de Ventas',
-        // No pasamos 'sales' aquí, DataTables los cargará.
-        // currentUser: req.session.user // Ya se pasa globalmente
-    });
-};
-
-export const showUsers = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-
-    if (!wpSiteUrl || !apiToken) {
-        console.error('Falta wp_site_url o api_token en la sesión para cargar usuarios.');
-        return res.render('users', {
-            title: 'Usuarios',
-            users: [], // DataTables cargará los datos
-            error: 'No se pudo conectar al sitio de WordPress. Por favor, inicia sesión de nuevo.'
-        });
-    }
-    // Para DataTables server-side, la vista inicial no necesita cargar datos.
-    res.render('users', {
-        title: 'Gestión de Usuarios'
-    });
-};
-
-export const apiGetUsersForDataTable = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ error: 'Autenticación requerida.' });
-    }
+async function updateCampaignStatus(campaignId, newStatus, res) {
+    const campaignFileName = `${campaignId}.json`;
+    const campaignFilePath = path.join(process.cwd(), 'data', campaignFileName);
+    console.log(`[API] Actualizando estado de campaña ${campaignId} a ${newStatus}`);
 
     try {
-        const { getWPUsers } = await import('../services/wpApiService.js');
-        
-        const draw = req.body.draw;
-        const start = parseInt(req.body.start) || 0;
-        const length = parseInt(req.body.length) || 10;
-        const searchValue = req.body.search?.value || '';
-        // phoneSearchValue ya no es necesario aquí
-        
-        const page = Math.floor(start / length) + 1;
-        const perPage = length;
-
-        let orderBy = 'display_name'; 
-        let orderDir = 'asc'; 
-
-        if (req.body.order && req.body.order.length > 0) {
-            const orderColumnIndex = parseInt(req.body.order[0].column);
-            const orderColumnName = req.body.columns[orderColumnIndex]?.data; 
-            
-            const validOrderByColumns = {
-                'id': 'ID',
-                'display_name': 'display_name',
-                'username': 'login',
-                'email': 'email'
-            };
-            if (orderColumnName && validOrderByColumns[orderColumnName]) {
-                orderBy = validOrderByColumns[orderColumnName];
+        let campaignJson;
+        try {
+            const fileContent = await fs.readFile(campaignFilePath, 'utf-8');
+            campaignJson = JSON.parse(fileContent);
+        } catch (readError) {
+            if (readError.code === 'ENOENT') {
+                return res.status(404).json({ success: false, message: 'Campaña no encontrada para actualizar estado.' });
             }
-            orderDir = req.body.order[0].dir === 'desc' ? 'desc' : 'asc';
+            throw readError; // Re-lanzar otros errores de lectura
         }
-        
-        console.log(`[TVP-POS DEBUG] apiGetUsersForDataTable: page=${page}, perPage=${perPage}, search=${searchValue}, orderBy=${orderBy}, orderDir=${orderDir}`);
-        const usersResult = await getWPUsers(wpSiteUrl, apiToken, page, perPage, '', searchValue, orderBy, orderDir);
 
-        res.json({
-            draw: parseInt(draw),
-            recordsTotal: usersResult.recordsTotal || 0,
-            recordsFiltered: usersResult.recordsFiltered || 0, 
-            data: usersResult.data || []
-        });
+        campaignJson.status = newStatus;
+        campaignJson.updatedAt = new Date().toISOString();
+        await fs.writeFile(campaignFilePath, JSON.stringify(campaignJson, null, 2), 'utf-8');
+        
+        console.log(`[API] Campaña ${campaignId} actualizada a estado: ${newStatus}`);
+        return res.json({ success: true, message: `Campaña ${newStatus === 'pausada' ? 'pausada' : 'actualizada a ' + newStatus}.` });
 
     } catch (error) {
+        console.error(`[API] Error al actualizar estado de la campaña ${campaignId} a ${newStatus}:`, error);
+        return res.status(500).json({ success: false, message: `Error interno al actualizar estado de la campaña.` });
+    }
+}
+
+export const apiPauseBulkCampaign = async (req, res) => {
+    const { campaignId } = req.params;
+    // Aquí, 'pausada' es el estado que el worker debe reconocer para no continuar.
+    // 'en_progreso_pausada' podría ser un estado si quieres diferenciar una pausa durante el progreso
+    // de una pausa antes de que haya comenzado, pero 'pausada' es más simple.
+    await updateCampaignStatus(campaignId, 'pausada', res);
+};
+
+export const apiResumeBulkCampaign = async (req, res) => {
+    const { campaignId } = req.params;
+    const campaignFileName = `${campaignId}.json`;
+    const campaignFilePath = path.join(process.cwd(), 'data', campaignFileName);
+    const { evolution_api: evolutionApiConfig } = await readAppSettings();
+
+    try {
+        const fileContent = await fs.readFile(campaignFilePath, 'utf-8');
+        const campaignJson = JSON.parse(fileContent);
+
+        if (campaignJson.status !== 'pausada') {
+            return res.status(400).json({ success: false, message: 'La campaña no está pausada.' });
+        }
+        
+        campaignJson.status = 'en_progreso'; // O 'iniciada' si quieres que el worker lo tome como nuevo
+        campaignJson.updatedAt = new Date().toISOString();
+        await fs.writeFile(campaignFilePath, JSON.stringify(campaignJson, null, 2), 'utf-8');
+        
+        // Importante: El worker `processBulkCampaignInBackground` está diseñado para ejecutarse una vez
+        // y recorrer toda la lista. Si se pausa, la instancia actual del worker terminará (o debería).
+        // Al reanudar, necesitamos "despertar" o iniciar una nueva instancia del worker para esta campaña.
+        // Si el worker es un proceso que revisa periódicamente, simplemente cambiar el estado es suficiente.
+        // Por ahora, como lo llamamos directamente después de crear la campaña,
+        // al reanudar, también lo llamaremos para que continúe.
+        // Esto podría llevar a múltiples workers si no se maneja con cuidado en un entorno más complejo,
+        // pero para la estructura actual es la forma más directa de reanudar.
+        console.log(`[API] Reanudando campaña ${campaignId}. Disparando worker...`);
+        processBulkCampaignInBackground(campaignFilePath, evolutionApiConfig); // No usamos await
+
+        res.json({ success: true, message: `Campaña ${campaignId} reanudada.` });
+
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            return res.status(404).json({ success: false, message: 'Campaña no encontrada para reanudar.' });
+        }
+        console.error(`[API] Error al reanudar la campaña ${campaignId}:`, error);
+        res.status(500).json({ success: false, message: 'Error interno al reanudar la campaña.' });
+    }
+};
+
+export const showSales = (req, res) => res.render('sales', { title: 'Historial de Ventas' });
+export const showUsers = (req, res) => res.render('users', { title: 'Gestión de Usuarios' });
+
+export const apiGetUsersForDataTable = async (req, res) => {
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ error: 'Autenticación requerida.' });
+    try {
+        const { getWPUsers } = await import('../services/wpApiService.js');
+        const { draw, start = 0, length = 10, search = {}, order = [], columns = [] } = req.body;
+        const page = Math.floor(start / length) + 1;
+        let orderBy = 'display_name', orderDir = 'asc';
+        if (order.length > 0) {
+            const colIndex = parseInt(order[0].column);
+            const colName = columns[colIndex]?.data;
+            const validCols = {'id':'ID', 'display_name':'display_name', 'username':'login', 'email':'email'};
+            if (colName && validCols[colName]) orderBy = validCols[colName];
+            orderDir = order[0].dir === 'desc' ? 'desc' : 'asc';
+        }
+        const usersResult = await getWPUsers(wpSiteUrl, apiToken, page, length, '', search.value || '', orderBy, orderDir);
+        res.json({ draw: parseInt(draw), recordsTotal: usersResult.recordsTotal || 0, recordsFiltered: usersResult.recordsFiltered || 0, data: usersResult.data || [] });
+    } catch (error) {
         console.error("Error en apiGetUsersForDataTable:", error.message);
-        res.status(500).json({ 
-            error: 'Error al obtener datos de usuarios para DataTables.',
-            draw: parseInt(req.body.draw) || 0,
-            recordsTotal: 0,
-            recordsFiltered: 0,
-            data: []
-        });
+        res.status(500).json({ error: 'Error al obtener usuarios.', draw: parseInt(req.body.draw), recordsTotal: 0, recordsFiltered: 0, data: [] });
     }
 };
 
 export const apiGetSalesForDataTable = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ error: 'Autenticación requerida.' });
-    }
-
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ error: 'Autenticación requerida.' });
     try {
         const { getWPSales } = await import('../services/wpApiService.js');
-        
-        const draw = req.body.draw;
-        const start = parseInt(req.body.start) || 0;
-        const length = parseInt(req.body.length) || 10;
-        const searchValue = req.body.search?.value || '';
-        
+        const { draw, start = 0, length = 10, search = {}, order = [], columns = [] } = req.body;
         const page = Math.floor(start / length) + 1;
-        const perPage = length;
-
-        let orderBy = 'date'; // Default para ventas
-        let orderDir = 'desc'; // Default para ventas
-
-        if (req.body.order && req.body.order.length > 0) {
-            const orderColumnIndex = parseInt(req.body.order[0].column);
-            const orderColumnName = req.body.columns[orderColumnIndex]?.data;
-            
-            const validOrderByColumns = { // Mapeo de 'data' de DataTables a campos de WC_Order_Query
-                'id': 'ID',
-                'date_created': 'date',
-                'status': 'status',
-                'total': 'total'
-                // 'customer_name' es más complejo de ordenar directamente en la query principal
-            };
-            if (orderColumnName && validOrderByColumns[orderColumnName]) {
-                orderBy = validOrderByColumns[orderColumnName];
-            }
-            orderDir = req.body.order[0].dir === 'desc' ? 'desc' : 'asc';
+        let orderBy = 'date', orderDir = 'desc';
+        if (order.length > 0) {
+            const colIndex = parseInt(order[0].column);
+            const colName = columns[colIndex]?.data;
+            const validCols = {'id':'ID', 'date_created':'date', 'status':'status', 'total':'total'};
+            if (colName && validCols[colName]) orderBy = validCols[colName];
+            orderDir = order[0].dir === 'desc' ? 'desc' : 'asc';
         }
-        
-        console.log(`[TVP-POS DEBUG] apiGetSalesForDataTable: page=${page}, perPage=${perPage}, search=${searchValue}, orderBy=${orderBy}, orderDir=${orderDir}`);
-        // Ya no se pasa phoneSearchValue. El servicio getWPSales se adaptará para no esperarlo.
-        const salesResult = await getWPSales(wpSiteUrl, apiToken, page, perPage, null, searchValue, orderBy, orderDir, req.body.columns, req.body.order);
-
-        res.json({
-            draw: parseInt(draw),
-            recordsTotal: salesResult.recordsTotal || 0,
-            recordsFiltered: salesResult.recordsFiltered || 0,
-            data: salesResult.data || []
-        });
-
+        const salesResult = await getWPSales(wpSiteUrl, apiToken, page, length, null, search.value || '', orderBy, orderDir, columns, order);
+        res.json({ draw: parseInt(draw), recordsTotal: salesResult.recordsTotal || 0, recordsFiltered: salesResult.recordsFiltered || 0, data: salesResult.data || [] });
     } catch (error) {
         console.error("Error en apiGetSalesForDataTable:", error.message);
-        res.status(500).json({ 
-            error: 'Error al obtener datos de ventas para DataTables.',
-            draw: parseInt(req.body.draw) || 0,
-            recordsTotal: 0,
-            recordsFiltered: 0,
-            data: []
-        });
+        res.status(500).json({ error: 'Error al obtener ventas.', draw: parseInt(req.body.draw), recordsTotal: 0, recordsFiltered: 0, data: [] });
     }
 };
 
-
-// --- API Controllers para Clientes ---
-
 export const apiSearchCustomers = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-    const searchTerm = req.query.search || '';
-    const page = parseInt(req.query.page) || 1;
-    const perPage = parseInt(req.query.per_page) || 10;
-
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ error: 'Autenticación requerida.' });
-    }
-
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    const { search: searchTerm = '', page = 1, per_page: perPage = 10 } = req.query;
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ error: 'Autenticación requerida.' });
     try {
         const { searchWPCustomers } = await import('../services/wpApiService.js');
-        const result = await searchWPCustomers(wpSiteUrl, apiToken, searchTerm, perPage, page);
-        res.json(result); 
+        res.json(await searchWPCustomers(wpSiteUrl, apiToken, searchTerm, parseInt(perPage), parseInt(page)));
     } catch (error) {
-        console.error("API Error al buscar clientes:", error.message);
         res.status(500).json({ error: 'Error al buscar clientes.' });
     }
 };
 
 export const apiCreateCustomer = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-    const customerData = req.body; 
-
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ error: 'Autenticación requerida.' });
-    }
-    if (!customerData.email) { 
-        return res.status(400).json({ error: 'El correo electrónico es obligatorio.' });
-    }
-
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    const customerData = req.body;
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ error: 'Autenticación requerida.' });
+    if (!customerData.email) return res.status(400).json({ error: 'El correo electrónico es obligatorio.' });
     try {
         const { createWPCustomer } = await import('../services/wpApiService.js');
-        const newCustomer = await createWPCustomer(wpSiteUrl, apiToken, customerData);
-        res.status(201).json(newCustomer); 
+        res.status(201).json(await createWPCustomer(wpSiteUrl, apiToken, customerData));
     } catch (error) {
-        console.error("API Error al crear cliente:", error.message, error.response?.data);
-        const statusCode = error.response?.status || 500;
-        const errorMessage = error.response?.data?.message || 'Error al crear el cliente.';
-        res.status(statusCode).json({ error: errorMessage });
+        res.status(error.response?.status || 500).json({ error: error.response?.data?.message || 'Error al crear cliente.' });
     }
 };
 
 export const apiUpdateCustomer = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-    const customerId = req.params.id;
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    const { id: customerId } = req.params;
     const customerData = req.body;
-
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ error: 'Autenticación requerida.' });
-    }
-    if (!customerId) {
-        return res.status(400).json({ error: 'Se requiere ID de cliente.' });
-    }
-
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ error: 'Autenticación requerida.' });
+    if (!customerId) return res.status(400).json({ error: 'Se requiere ID de cliente.' });
     try {
         const { updateWPCustomer } = await import('../services/wpApiService.js');
-        const updatedCustomer = await updateWPCustomer(wpSiteUrl, apiToken, customerId, customerData);
-        res.json(updatedCustomer);
+        res.json(await updateWPCustomer(wpSiteUrl, apiToken, customerId, customerData));
     } catch (error) {
-        console.error(`API Error al actualizar cliente ${customerId}:`, error.message, error.response?.data);
-        const statusCode = error.response?.status || 500;
-        const errorMessage = error.response?.data?.message || 'Error al actualizar el cliente.';
-        res.status(statusCode).json({ error: errorMessage });
+        res.status(error.response?.status || 500).json({ error: error.response?.data?.message || 'Error al actualizar cliente.' });
     }
 };
 
 export const apiGetCustomerById = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-    const customerId = req.params.id;
-    console.log('[TVP-POS DEBUG] mainController.js - apiGetCustomerById - ID Recibido:', customerId);
-
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ error: 'Autenticación requerida.' });
-    }
-    if (!customerId) {
-        return res.status(400).json({ error: 'Se requiere ID de cliente.' });
-    }
-
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    const { id: customerId } = req.params;
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ error: 'Autenticación requerida.' });
+    if (!customerId) return res.status(400).json({ error: 'Se requiere ID de cliente.' });
     try {
         const { getWPCustomerById } = await import('../services/wpApiService.js');
         const customer = await getWPCustomerById(wpSiteUrl, apiToken, customerId);
-        console.log('[TVP-POS DEBUG] mainController.js - apiGetCustomerById - Cliente obtenido del servicio:', customer);
-        if (!customer) { 
-            return res.status(404).json({ error: 'Cliente no encontrado.' });
-        }
+        if (!customer) return res.status(404).json({ error: 'Cliente no encontrado.' });
         res.json(customer);
     } catch (error) {
-        console.error(`API Error al obtener cliente ${customerId}:`, error.message);
-        const statusCode = error.response?.status || 500;
-        const errorMessage = error.response?.data?.message || `Error al obtener el cliente ${customerId}.`;
-        res.status(statusCode).json({ error: errorMessage });
+        res.status(error.response?.status || 500).json({ error: error.response?.data?.message || 'Error al obtener cliente.' });
     }
 };
 
 export const apiDeleteUser = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-    const userId = req.params.id;
-
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ success: false, message: 'Autenticación requerida.' });
-    }
-    if (!userId) {
-        return res.status(400).json({ success: false, message: 'Se requiere ID de usuario.' });
-    }
-
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    const { id: userId } = req.params;
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ success: false, message: 'Autenticación requerida.' });
+    if (!userId) return res.status(400).json({ success: false, message: 'Se requiere ID de usuario.' });
     try {
         const { deleteWPUser } = await import('../services/wpApiService.js');
         const result = await deleteWPUser(wpSiteUrl, apiToken, userId);
-        if (result && result.success) {
-            res.json({ success: true, message: result.message || 'Usuario eliminado correctamente.' });
-        } else {
-            res.status(result.statusCode || 400).json({ success: false, message: result.message || 'No se pudo eliminar el usuario desde WordPress.' });
-        }
+        res.status(result.statusCode || (result.success ? 200 : 400)).json(result);
     } catch (error) {
-        console.error(`API Error al eliminar usuario ${userId}:`, error.message, error.response?.data);
-        const statusCode = error.response?.status || 500;
-        const errorMessage = error.response?.data?.message || `Error al eliminar el usuario ${userId}.`;
-        res.status(statusCode).json({ success: false, message: errorMessage });
+        res.status(error.response?.status || 500).json({ success: false, message: error.response?.data?.message || 'Error al eliminar usuario.' });
     }
 };
 
 export const apiGetUserSales = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-    const userId = req.params.id; 
-
-    const page = parseInt(req.query.page) || 1;
-    const perPage = parseInt(req.query.per_page) || 100; 
-
-
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ error: 'Autenticación requerida.' });
-    }
-    if (!userId) {
-        return res.status(400).json({ error: 'Se requiere ID de usuario.' });
-    }
-
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    const { id: userId } = req.params;
+    const { page = 1, per_page: perPage = 100 } = req.query;
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ error: 'Autenticación requerida.' });
+    if (!userId) return res.status(400).json({ error: 'Se requiere ID de usuario.' });
     try {
         const { getWPSales } = await import('../services/wpApiService.js');
-        const salesResult = await getWPSales(wpSiteUrl, apiToken, page, perPage, userId);
-        
-        console.log(`[TVP-POS DEBUG] mainController.js - apiGetUserSales - Ventas obtenidas para usuario ${userId}:`, salesResult.data ? salesResult.data.length : 0);
-        res.json(salesResult); 
-
+        res.json(await getWPSales(wpSiteUrl, apiToken, parseInt(page), parseInt(perPage), userId));
     } catch (error) {
-        console.error(`API Error al obtener ventas para usuario ${userId}:`, error.message);
-        const statusCode = error.response?.status || 500;
-        const errorMessage = error.response?.data?.message || `Error al obtener las ventas del usuario ${userId}.`;
-        res.status(statusCode).json({ error: errorMessage, data: [], total: 0, totalPages: 0 });
+        res.status(error.response?.status || 500).json({ error: error.response?.data?.message || 'Error al obtener ventas del usuario.' });
     }
 };
 
+import { addManualEvent, updateManualEvent, deleteManualEvent, readManualEvents } from '../utils/manualEventsService.js';
 
-// --- API Controllers para Eventos Manuales del Calendario ---
-import { 
-    addManualEvent, 
-    updateManualEvent, 
-    deleteManualEvent,
-    readManualEvents
-    // getManualEvents // Eliminada esta línea, no existe en el servicio
-} from '../utils/manualEventsService.js';
-
-// Nuevo controlador para obtener solo eventos manuales
 export const apiGetManualEvents = async (req, res) => {
     try {
-        const { search: searchTerm } = req.query; // Podríamos añadir start/end si es necesario filtrar por fecha aquí
+        const { search: searchTerm } = req.query;
         let manualEvents = await readManualEvents();
         if (searchTerm) {
-            const lowerSearchTerm = searchTerm.toLowerCase();
             manualEvents = manualEvents.filter(event =>
-                (event.title && event.title.toLowerCase().includes(lowerSearchTerm)) ||
-                (event.description && event.description.toLowerCase().includes(lowerSearchTerm))
+                (event.title?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (event.description?.toLowerCase().includes(searchTerm.toLowerCase()))
             );
         }
         res.json(manualEvents);
     } catch (error) {
-        console.error("API Error al obtener eventos manuales:", error);
-        res.status(500).json({ error: error.message || 'Error al obtener los eventos manuales.' });
+        res.status(500).json({ error: 'Error al obtener eventos manuales.' });
     }
 };
 
 export const apiCreateManualEvent = async (req, res) => {
+    const eventData = req.body;
+    if (!eventData.title || !eventData.start) return res.status(400).json({ error: 'Título y fecha de inicio son obligatorios.' });
     try {
-        const eventData = req.body;
-        if (!eventData.title || !eventData.start) {
-            return res.status(400).json({ error: 'Título y fecha de inicio son obligatorios para el evento.' });
-        }
-        const newEvent = await addManualEvent(eventData);
-        res.status(201).json(newEvent);
+        res.status(201).json(await addManualEvent(eventData));
     } catch (error) {
-        console.error("API Error al crear evento manual:", error);
-        res.status(500).json({ error: error.message || 'Error al crear el evento manual.' });
+        res.status(500).json({ error: 'Error al crear evento manual.' });
     }
 };
 
 export const apiUpdateManualEvent = async (req, res) => {
+    const { id: eventId } = req.params;
+    const eventData = req.body;
+    if (!eventId) return res.status(400).json({ error: 'Se requiere ID del evento.' });
     try {
-        const eventId = req.params.id;
-        const eventData = req.body;
-        if (!eventId) {
-            return res.status(400).json({ error: 'Se requiere ID del evento.' });
-        }
         const updatedEvent = await updateManualEvent(eventId, eventData);
-        if (!updatedEvent) {
-            return res.status(404).json({ error: 'Evento manual no encontrado.' });
-        }
+        if (!updatedEvent) return res.status(404).json({ error: 'Evento manual no encontrado.' });
         res.json(updatedEvent);
     } catch (error) {
-        console.error("API Error al actualizar evento manual:", error);
-        res.status(500).json({ error: error.message || 'Error al actualizar el evento manual.' });
+        res.status(500).json({ error: 'Error al actualizar evento manual.' });
     }
 };
 
 export const apiDeleteManualEvent = async (req, res) => {
+    const { id: eventId } = req.params;
+    if (!eventId) return res.status(400).json({ error: 'Se requiere ID del evento.' });
     try {
-        const eventId = req.params.id;
-        if (!eventId) {
-            return res.status(400).json({ error: 'Se requiere ID del evento.' });
-        }
-        const success = await deleteManualEvent(eventId);
-        if (!success) {
-            return res.status(404).json({ error: 'Evento manual no encontrado para eliminar.' });
-        }
+        if (!await deleteManualEvent(eventId)) return res.status(404).json({ error: 'Evento no encontrado.' });
         res.status(204).send();
     } catch (error) {
-        console.error("API Error al eliminar evento manual:", error);
-        res.status(500).json({ error: error.message || 'Error al eliminar el evento manual.' });
+        res.status(500).json({ error: 'Error al eliminar evento manual.' });
     }
 };
 
-// Nuevo controlador para obtener solo eventos de suscripción de WP
 export const apiGetWPSubscriptionEventsOnly = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
     const { start, end, search: searchTerm } = req.query;
-
-    // Este controlador SÍ requiere autenticación, que será manejada por el middleware en la ruta
-    // if (!wpSiteUrl || !apiToken) { // Esta verificación ya la hace isAuthenticated
-    //     return res.status(401).json({ error: 'Autenticación requerida.' });
-    // }
-
     try {
         const { getWPSubscriptionEvents } = await import('../services/wpApiService.js');
-        let subscriptionEvents = [];
-        console.log("[Node DEBUG mainController] apiGetWPSubscriptionEventsOnly - Intentando obtener eventos de suscripción de WP...");
-        subscriptionEvents = await getWPSubscriptionEvents(wpSiteUrl, apiToken, start, end, searchTerm);
-        console.log(`[Node DEBUG mainController] apiGetWPSubscriptionEventsOnly - Eventos de suscripción de WP recibidos: ${subscriptionEvents ? subscriptionEvents.length : 'null/undefined'}`);
-        if (!Array.isArray(subscriptionEvents)) {
-            console.error("[Node DEBUG mainController] apiGetWPSubscriptionEventsOnly - getWPSubscriptionEvents no devolvió un array. Se usará array vacío.", subscriptionEvents);
-            subscriptionEvents = [];
-        }
-        res.json(subscriptionEvents);
-    } catch (wpError) {
-        console.error("[Node DEBUG mainController] apiGetWPSubscriptionEventsOnly - Error explícito al obtener eventos de suscripción de WP:", wpError.message);
-        // Devolver un array vacío o un error JSON apropiado
-        res.status(500).json({ error: 'Error al obtener eventos de suscripción de WordPress.', details: wpError.message, data: [] });
+        let events = await getWPSubscriptionEvents(wpSiteUrl, apiToken, start, end, searchTerm);
+        res.json(Array.isArray(events) ? events : []);
+    } catch (error) {
+        res.status(500).json({ error: 'Error al obtener eventos de suscripción.', details: error.message });
     }
 };
 
-// Controlador original apiGetCalendarEvents - podría ser deprecado o modificado si ya no se usa directamente
 export const apiGetCalendarEvents = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-    const { start, end, search: searchTerm } = req.query; 
-
-    console.log(`[Node DEBUG mainController] apiGetCalendarEvents - Solicitud recibida. Start: ${start}, End: ${end}, Search: ${searchTerm}`);
-
-    if (!wpSiteUrl || !apiToken) {
-        console.error("[Node DEBUG mainController] apiGetCalendarEvents - Error: Autenticación requerida (falta wpSiteUrl o apiToken en sesión).");
-        return res.status(401).json({ error: 'Autenticación requerida.' });
-    }
-
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    const { start, end, search: searchTerm } = req.query;
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ error: 'Autenticación requerida.' });
     try {
-        const { getWPSubscriptionEvents } = await import('../services/wpApiService.js');
-        let manualEvents = await readManualEvents(); 
-        console.log(`[Node DEBUG mainController] apiGetCalendarEvents - Eventos manuales leídos: ${manualEvents.length}`);
-        
+        let manualEvents = await readManualEvents();
         if (searchTerm) {
-            const lowerSearchTerm = searchTerm.toLowerCase();
-            manualEvents = manualEvents.filter(event => 
-                (event.title && event.title.toLowerCase().includes(lowerSearchTerm)) ||
-                (event.description && event.description.toLowerCase().includes(lowerSearchTerm))
-            );
-            console.log(`[Node DEBUG mainController] apiGetCalendarEvents - Eventos manuales después de filtrar por "${searchTerm}": ${manualEvents.length}`);
+            manualEvents = manualEvents.filter(e => e.title?.toLowerCase().includes(searchTerm.toLowerCase()) || e.description?.toLowerCase().includes(searchTerm.toLowerCase()));
         }
-        
         let subscriptionEvents = [];
         try {
-            console.log("[Node DEBUG mainController] apiGetCalendarEvents - Intentando obtener eventos de suscripción de WP...");
+            const { getWPSubscriptionEvents } = await import('../services/wpApiService.js');
             subscriptionEvents = await getWPSubscriptionEvents(wpSiteUrl, apiToken, start, end, searchTerm);
-            console.log(`[Node DEBUG mainController] apiGetCalendarEvents - Eventos de suscripción de WP recibidos: ${subscriptionEvents ? subscriptionEvents.length : 'null/undefined'}`);
-            if (!Array.isArray(subscriptionEvents)) { // Asegurar que sea un array
-                console.error("[Node DEBUG mainController] apiGetCalendarEvents - getWPSubscriptionEvents no devolvió un array. Se usará array vacío.", subscriptionEvents);
-                subscriptionEvents = [];
-            }
-        } catch (wpError) { // Este catch podría no alcanzarse si getWPSubscriptionEvents ya maneja y devuelve []
-            console.error("[Node DEBUG mainController] apiGetCalendarEvents - Error explícito al obtener eventos de suscripción de WP:", wpError.message);
-            subscriptionEvents = []; // Asegurar que sea un array vacío en caso de error aquí
+            if(!Array.isArray(subscriptionEvents)) subscriptionEvents = [];
+        } catch (wpError) {
+            console.error("Error obteniendo eventos de WP para calendario:", wpError.message);
         }
-        
-        const allEvents = [...manualEvents, ...subscriptionEvents];
-        console.log(`[Node DEBUG mainController] apiGetCalendarEvents - Total de eventos combinados a enviar: ${allEvents.length}`);
-        return res.json(allEvents); // Asegurar que se retorna aquí
-
-    } catch (error) { // Catch general
-        console.error("[Node DEBUG mainController] apiGetCalendarEvents - Error FATAL al obtener eventos del calendario combinados:", error.message, error.stack);
-        // Asegurarse de que incluso en un error inesperado, se envíe JSON
-        if (!res.headersSent) {
-            return res.status(500).json({ error: 'Error interno del servidor al obtener eventos del calendario.', details: error.message });
-        }
+        res.json([...manualEvents, ...subscriptionEvents]);
+    } catch (error) {
+        if (!res.headersSent) res.status(500).json({ error: 'Error obteniendo eventos del calendario.', details: error.message });
     }
 };
 
-// --- Controlador para la Vista del Calendario ---
-export const showCalendarView = (req, res) => {
-    res.render('calendar', { title: 'Calendario de Vencimientos' });
-};
-
-// --- Controlador para la Vista de Configuración ---
-export const showSettingsPage = async (req, res) => { // <--- AÑADIDO ASYNC AQUÍ
-    console.log('[DEBUG] Dentro del controlador showSettingsPage');
-    // Por ahora, solo renderizamos la vista.
-    // Más adelante, cargaremos la configuración existente para pasarla a la vista.
-    // Ahora sí cargamos la config para la vista:
+export const showCalendarView = (req, res) => res.render('calendar', { title: 'Calendario de Vencimientos' });
+export const showWhatsAppBulkPage = (req, res) => res.render('whatsapp-bulk', { title: 'Mensajería Masiva WhatsApp' });
+export const showMediaPage = (req, res) => res.render('media', { title: 'Biblioteca Multimedia' });
+export const showSettingsPage = async (req, res) => {
     try {
-        const config = await readAppSettings();
-        res.render('settings', { 
-            title: 'Configuración General',
-            config: config 
-        });
+        res.render('settings', { title: 'Configuración General', config: await readAppSettings() });
     } catch (error) {
         res.status(500).send('Error al cargar la página de configuración.');
     }
 };
 
-// --- API Endpoints para Configuración General ---
 export const getAppSettings = async (req, res) => {
     try {
+        console.log('[DEBUG] API GET /api/settings - Intentando leer configuración.');
         const config = await readAppSettings();
+        console.log('[DEBUG] API GET /api/settings - Configuración leída:', JSON.stringify(config).substring(0, 200) + '...');
         res.json(config);
     } catch (error) {
-        res.status(500).json({ error: 'Error al leer la configuración.' });
+        console.error('[ERROR] API GET /api/settings - Error en getAppSettings:', error);
+        res.status(500).json({ error: 'Error al leer la configuración desde el servidor.' });
     }
 };
 
 export const saveAppSettings = async (req, res) => {
     try {
-        const newConfig = req.body;
-        // Aquí se podría añadir validación de los datos recibidos en newConfig
-        // Por ejemplo, asegurar que las URLs son válidas, etc.
-        await writeAppSettings(newConfig);
+        console.log('[DEBUG] API POST /api/settings - Guardando configuración:', JSON.stringify(req.body).substring(0,200) + '...');
+        await writeAppSettings(req.body);
         res.json({ success: true, message: 'Configuración guardada exitosamente.' });
     } catch (error) {
-        res.status(500).json({ error: 'Error al guardar la configuración.' });
+        console.error('[ERROR] API POST /api/settings - Error en saveAppSettings:', error);
+        res.status(500).json({ error: 'Error al guardar la configuración en el servidor.' });
     }
 };
 
-// --- API Endpoints para Evolution API ---
-import { 
-    getEvolutionInstances as getEvoInstancesService,
-    sendWhatsAppMessage as sendEvoWhatsAppMessageService
-} from '../services/evolutionApiService.js';
+import { getEvolutionInstances as getEvoInstancesService, sendWhatsAppMessage as sendEvoWhatsAppMessageService, getEvolutionContacts } from '../services/evolutionApiService.js';
+// searchChatwootConversationsForSelect ha sido eliminada de las importaciones
+import { getChatwootMediaAttachments, getAttachmentsForConversation, getChatwootLabels, getChatwootContactsWithLabel, getAllChatwootContacts } from '../services/chatwootApiService.js';
+
+
+export const apiGetChatwootLabelsController = async (req, res) => {
+    try {
+        const appConfig = await readAppSettings();
+        if (!appConfig.chatwoot_api?.url || !appConfig.chatwoot_api?.account_id || !appConfig.chatwoot_api?.token) {
+            return res.status(500).json({ error: 'La configuración de Chatwoot API no está completa.' });
+        }
+        const labels = await getChatwootLabels(
+            appConfig.chatwoot_api.url,
+            appConfig.chatwoot_api.account_id,
+            appConfig.chatwoot_api.token
+        );
+        res.json(labels);
+    } catch (error) {
+        console.error('Error en apiGetChatwootLabelsController:', error.message);
+        res.status(500).json({ error: error.message || 'Error al obtener las etiquetas de Chatwoot.' });
+    }
+};
+
+export const apiGetChatwootMediaItems = async (req, res) => {
+    try {
+        const appConfig = await readAppSettings();
+        if (!appConfig.chatwoot_api?.url || !appConfig.chatwoot_api?.account_id || !appConfig.chatwoot_api?.token) {
+            return res.status(500).json({ error: 'La configuración de Chatwoot API no está completa.' });
+        }
+
+        const chatwootPageToFetch = parseInt(req.query.page) || 1;
+        // const mediaType = req.query.mediaType || ''; // Eliminado ya que no se usa más
+        const conversationIdFilter = req.query.conversationId ? parseInt(req.query.conversationId) : null;
+
+        let resultFromService;
+
+        if (conversationIdFilter) {
+            console.log(`[API] Obteniendo adjuntos para conversationId: ${conversationIdFilter}`);
+            const attachments = await getAttachmentsForConversation(
+                appConfig.chatwoot_api.url,
+                appConfig.chatwoot_api.account_id,
+                conversationIdFilter,
+                appConfig.chatwoot_api.token
+            );
+            resultFromService = { attachments: attachments, hasMoreChatwootPages: false };
+        } else {
+            console.log(`[API] Obteniendo adjuntos de la página ${chatwootPageToFetch} de conversaciones de Chatwoot.`);
+            resultFromService = await getChatwootMediaAttachments(
+                appConfig.chatwoot_api.url,
+                appConfig.chatwoot_api.account_id,
+                appConfig.chatwoot_api.token,
+                chatwootPageToFetch
+                // mediaType ya no se pasa
+            );
+        }
+
+        const { attachments, hasMoreChatwootPages } = resultFromService;
+        
+        res.json({
+            data: attachments, 
+            currentPage: chatwootPageToFetch,
+            totalPages: hasMoreChatwootPages ? chatwootPageToFetch + 1 : chatwootPageToFetch,
+            totalItems: attachments.length 
+        });
+
+    } catch (error) {
+        console.error('Error en apiGetChatwootMediaItems:', error.message);
+        res.status(500).json({ error: error.message || 'Error al obtener los archivos multimedia de Chatwoot.' });
+    }
+};
 
 export const getEvolutionApiInstances = async (req, res) => {
     try {
         const appConfig = await readAppSettings();
-        if (!appConfig.evolution_api || !appConfig.evolution_api.url || !appConfig.evolution_api.token) {
-            return res.status(500).json({ error: 'La configuración de Evolution API (URL y Token) no está completa.' });
+        if (!appConfig.evolution_api?.url || !appConfig.evolution_api?.token) {
+            return res.status(500).json({ error: 'La configuración de Evolution API no está completa.' });
         }
-
-        const instances = await getEvoInstancesService(appConfig.evolution_api.url, appConfig.evolution_api.token);
-        res.json(instances);
+        res.json(await getEvoInstancesService(appConfig.evolution_api.url, appConfig.evolution_api.token));
     } catch (error) {
         console.error('Error en getEvolutionApiInstances:', error.message);
-        res.status(500).json({ error: error.message || 'Error al obtener las instancias de Evolution API.' });
+        res.status(500).json({ error: 'Error al obtener instancias de Evolution API.' });
     }
 };
 
 export const sendWhatsAppMessageController = async (req, res) => {
     try {
-        const { phoneNumber, messageText, instanceName, orderId } = req.body; // orderId es opcional, para logging o futuras referencias
-
+        const { phoneNumber, messageText, instanceName } = req.body; 
         if (!phoneNumber || !messageText || !instanceName) {
-            return res.status(400).json({ error: 'Faltan parámetros: phoneNumber, messageText o instanceName son requeridos.' });
+            return res.status(400).json({ error: 'Faltan parámetros: phoneNumber, messageText o instanceName.' });
         }
-
         const appConfig = await readAppSettings();
-        if (!appConfig.evolution_api || !appConfig.evolution_api.url || !appConfig.evolution_api.token) {
-            return res.status(500).json({ error: 'La configuración de Evolution API (URL y Token) no está completa.' });
+        if (!appConfig.evolution_api?.url || !appConfig.evolution_api?.token) {
+            return res.status(500).json({ error: 'La configuración de Evolution API no está completa.' });
         }
-
-        console.log(`[WhatsApp Controller] Intentando enviar mensaje a ${phoneNumber} via instancia ${instanceName}. Pedido: ${orderId || 'N/A'}`);
-        
-        // Aquí podrías añadir lógica para reemplazar placeholders en messageText si es necesario
-        // Por ejemplo, si messageText es "Hola {cliente}, tu pedido {pedidoId}..."
-        // y tienes esos datos, los reemplazarías antes de enviar.
-
         const evolutionResponse = await sendEvoWhatsAppMessageService(
             appConfig.evolution_api.url,
             appConfig.evolution_api.token,
             instanceName,
             phoneNumber,
             messageText
-            // Podrías pasar 'options' adicionales si las necesitas
         );
-
-        res.json({ success: true, message: 'Mensaje enviado (o en proceso de envío) a través de Evolution API.', data: evolutionResponse });
-
+        res.json({ success: true, message: 'Mensaje enviado vía Evolution API.', data: evolutionResponse });
     } catch (error) {
         console.error('Error en sendWhatsAppMessageController:', error.message);
-        res.status(500).json({ error: error.message || 'Error al enviar el mensaje de WhatsApp.' });
+        res.status(500).json({ error: 'Error al enviar mensaje de WhatsApp.' });
     }
 };
 
-// --- API para Cupones y Ventas TPV ---
-
 export const apiValidateCoupon = async (req, res) => {
     const { couponCode, cartSubtotal } = req.body;
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ success: false, message: 'Autenticación requerida.' });
-    }
-    if (!couponCode) {
-        return res.status(400).json({ success: false, message: 'El código de cupón es requerido.' });
-    }
-
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ success: false, message: 'Autenticación requerida.' });
+    if (!couponCode) return res.status(400).json({ success: false, message: 'El código de cupón es requerido.' });
     try {
         const { validateWPCoupon } = await import('../services/wpApiService.js');
         const couponDetails = await validateWPCoupon(wpSiteUrl, apiToken, couponCode, cartSubtotal);
-        
-        if (couponDetails.success) {
-            res.json(couponDetails);
-        } else {
-            res.status(400).json(couponDetails); 
-        }
-
+        res.status(couponDetails.success ? 200 : 400).json(couponDetails);
     } catch (error) {
-        console.error("API Error al validar cupón:", error.message, error);
-        const errorMessage = error.message || 'Error al validar el cupón.';
-        const statusCode = error.statusCode || (error.success === false ? 400 : 500); 
-        res.status(statusCode).json({ success: false, message: errorMessage, details: error.details || null });
+        res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Error al validar cupón.', details: error.details });
     }
 };
 
 export const apiGetSaleById = async (req, res) => {
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-    const saleId = req.params.id;
-
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ error: 'Autenticación requerida.' });
-    }
-    if (!saleId) {
-        return res.status(400).json({ error: 'Se requiere ID de la venta.' });
-    }
-
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    const { id: saleId } = req.params;
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ error: 'Autenticación requerida.' });
+    if (!saleId) return res.status(400).json({ error: 'Se requiere ID de la venta.' });
     try {
         const { getWPSaleById } = await import('../services/wpApiService.js');
         const saleDetails = await getWPSaleById(wpSiteUrl, apiToken, saleId);
-        if (!saleDetails) {
-            return res.status(404).json({ error: 'Venta no encontrada.' });
-        }
+        if (!saleDetails) return res.status(404).json({ error: 'Venta no encontrada.' });
         res.json(saleDetails);
     } catch (error) {
-        console.error(`API Error al obtener detalles de la venta ${saleId}:`, error.message, error.response?.data);
-        const statusCode = error.response?.status || 500;
-        const errorMessage = error.response?.data?.message || `Error al obtener detalles de la venta ${saleId}.`;
-        res.status(statusCode).json({ error: errorMessage });
+        res.status(error.response?.status || 500).json({ error: error.response?.data?.message || 'Error al obtener detalles de la venta.' });
     }
 };
 
-export const apiProcessSale = async (req, res) => {
-    const saleData = req.body;
-    const wpSiteUrl = req.session.wp_site_url;
-    const apiToken = req.session.api_token;
-    const currentUser = req.session.user; 
+export const apiStartBulkCampaign = async (req, res) => {
+    const campaignDataFromFrontend = req.body;
+    const { evolution_api: evolutionApiConfig } = await readAppSettings(); // Para usar en el envío real
+    console.log('[API] Iniciando campaña masiva con datos:', campaignDataFromFrontend);
 
-    if (!wpSiteUrl || !apiToken) {
-        return res.status(401).json({ success: false, message: 'Autenticación requerida.' });
-    }
-
-    if (!saleData.cart || saleData.cart.length === 0) {
-        return res.status(400).json({ success: false, message: 'El carrito está vacío.' });
-    }
-    if (!saleData.customerId && saleData.customerId !== 0) { // Permitir customerId 0 para invitado
-        return res.status(400).json({ success: false, message: 'El cliente es requerido.' });
-    }
-    if (!saleData.paymentMethod) {
-        return res.status(400).json({ success: false, message: 'El método de pago es requerido.' });
-    }
-    if (saleData.saleType === 'suscripcion' && (!saleData.subscriptionTitle || !saleData.subscriptionExpiry)) {
-        return res.status(400).json({ success: false, message: 'Para suscripciones, el título y la fecha de vencimiento son obligatorios.' });
-    }
-    
     try {
-        console.log("Datos de venta recibidos en backend para procesar:", saleData);
-        const { createWPSale } = await import('../services/wpApiService.js');
-        const saleResultFromWP = await createWPSale(wpSiteUrl, apiToken, saleData, currentUser);
+        // 1. Validar datos (básico por ahora)
+        if (!campaignDataFromFrontend.campaignTitle || !campaignDataFromFrontend.campaignMessage || !campaignDataFromFrontend.evolutionInstance) {
+            return res.status(400).json({ success: false, message: 'Faltan datos esenciales para la campaña.' });
+        }
+
+        // 2. Generar ID de campaña y nombre de archivo
+        const campaignId = `campaign_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const campaignFileName = `${campaignId}.json`;
+        const campaignFilePath = path.join(process.cwd(), 'data', campaignFileName);
+
+        // 3. Obtener/Simular lista de contactos
+        // TODO: Implementar la lógica real para obtener contactos según campaignDataFromFrontend.contactSource
+        let contacts = [];
+        const appConfig = await readAppSettings(); // Necesario para Chatwoot API
+
+        if (campaignDataFromFrontend.contactSource === 'chatwoot_label' && campaignDataFromFrontend.chatwootLabel) {
+            if (!appConfig.chatwoot_api?.url || !appConfig.chatwoot_api?.account_id || !appConfig.chatwoot_api?.token) {
+                return res.status(400).json({ success: false, message: 'La configuración de Chatwoot API no está completa para obtener contactos.' });
+            }
+            try {
+                contacts = await getChatwootContactsWithLabel(
+                    appConfig.chatwoot_api.url,
+                    appConfig.chatwoot_api.account_id,
+                    appConfig.chatwoot_api.token,
+                    campaignDataFromFrontend.chatwootLabel
+                );
+                // Mapear los nombres de los campos si es necesario para los placeholders
+                contacts = contacts.map(c => {
+                    let phoneNumber = c.phone || '';
+                    // Limpiar número: quitar no dígitos, excepto el + inicial si existe
+                    phoneNumber = phoneNumber.replace(/[^\d+]/g, '');
+                    if (phoneNumber.startsWith('+')) {
+                        phoneNumber = phoneNumber.substring(1); // Quitar el + inicial
+                    }
+                    // Aquí se podría añadir lógica para asegurar el código de país si es necesario
+                    // ej. if (phoneNumber.length === 8 && !phoneNumber.startsWith('591')) phoneNumber = `591${phoneNumber}`;
+
+                    return {
+                        id: c.id_chatwoot, 
+                        phone: phoneNumber,
+                        nombre_cliente: c.name ? c.name.split(' ')[0] : '', 
+                        apellido_cliente: c.name ? c.name.split(' ').slice(1).join(' ') : '', 
+                        email: c.email, 
+                        status: 'pendiente'
+                    };
+                }).filter(c => c.phone); // Asegurarse de que aún tengamos teléfono después de limpiar
+
+            } catch (error) {
+                console.error(`[API] Error obteniendo contactos de Chatwoot por etiqueta ${campaignDataFromFrontend.chatwootLabel}:`, error);
+                return res.status(500).json({ success: false, message: `Error al obtener contactos de Chatwoot: ${error.message}` });
+            }
+        } else if (campaignDataFromFrontend.contactSource === 'chatwoot_all') {
+            if (!appConfig.chatwoot_api?.url || !appConfig.chatwoot_api?.account_id || !appConfig.chatwoot_api?.token) {
+                return res.status(400).json({ success: false, message: 'La configuración de Chatwoot API no está completa para obtener contactos.' });
+            }
+            try {
+                contacts = await getAllChatwootContacts(
+                    appConfig.chatwoot_api.url,
+                    appConfig.chatwoot_api.account_id,
+                    appConfig.chatwoot_api.token
+                );
+                contacts = contacts.map(c => {
+                    let phoneNumber = c.phone || '';
+                    phoneNumber = phoneNumber.replace(/[^\d+]/g, '');
+                    if (phoneNumber.startsWith('+')) {
+                        phoneNumber = phoneNumber.substring(1);
+                    }
+                    return {
+                        id: c.id_chatwoot,
+                        phone: phoneNumber,
+                        nombre_cliente: c.name ? c.name.split(' ')[0] : '',
+                        apellido_cliente: c.name ? c.name.split(' ').slice(1).join(' ') : '',
+                        email: c.email,
+                        status: 'pendiente'
+                    };
+                }).filter(c => c.phone);
+            } catch (error) {
+                console.error(`[API] Error obteniendo todos los contactos de Chatwoot:`, error);
+                return res.status(500).json({ success: false, message: `Error al obtener todos los contactos de Chatwoot: ${error.message}` });
+            }
+        } else if (campaignDataFromFrontend.contactSource === 'evolution_api') {
+            if (!evolutionApiConfig?.url || !evolutionApiConfig?.token || !campaignDataFromFrontend.evolutionInstance) {
+                return res.status(400).json({ success: false, message: 'La configuración de Evolution API o la instancia no están completas para obtener contactos.' });
+            }
+            try {
+                contacts = await getEvolutionContacts(
+                    evolutionApiConfig.url,
+                    evolutionApiConfig.token,
+                    campaignDataFromFrontend.evolutionInstance
+                );
+                // El mapeo a {phone, nombre_cliente, status} ya se hace dentro de getEvolutionContacts
+            } catch (error) {
+                console.error(`[API] Error obteniendo contactos de Evolution API para la instancia ${campaignDataFromFrontend.evolutionInstance}:`, error);
+                return res.status(500).json({ success: false, message: `Error al obtener contactos de Evolution API: ${error.message}` });
+            }
+        } else if (campaignDataFromFrontend.contactSource === 'manual_list' && campaignDataFromFrontend.manualContacts) {
+            contacts = campaignDataFromFrontend.manualContacts.split('\n')
+                .map(line => line.trim())
+                .filter(line => line)
+                .map((phone, index) => ({ id: `manual_${index + 1}`, phone: phone, nombre_cliente: '', apellido_cliente: '', status: 'pendiente' }));
+        }
+        // TODO: Añadir lógica para woocommerce_all, woocommerce_subscriptions, manual_csv
+        else {
+            // Por ahora, si no es Chatwoot por etiqueta o lista manual, usamos la simulación
+            console.warn(`[API] Fuente de contactos '${campaignDataFromFrontend.contactSource}' no completamente implementada o datos no provistos, usando simulación.`);
+            contacts = [
+                { id: 1, phone: '591XXXXXXXX', nombre_cliente: 'Percy Alvarez', apellido_cliente: 'Dev', status: 'pendiente' },
+                { id: 2, phone: '591YYYYYYYY', nombre_cliente: 'Juan', apellido_cliente: 'Perez', status: 'pendiente' },
+                { id: 3, phone: '591ZZZZZZZZ', nombre_cliente: 'Maria', apellido_cliente: 'Garcia', status: 'pendiente' }
+            ];
+        }
         
-        res.status(201).json({ 
-            success: true, 
-            message: 'Venta procesada y registrada en WordPress exitosamente.', 
-            data: saleResultFromWP 
-        });
+        if (contacts.length === 0) {
+            return res.status(400).json({ success: false, message: 'No se encontraron contactos para la fuente y etiqueta seleccionadas.' });
+        }
+
+        const campaignJson = {
+            id: campaignId,
+            title: campaignDataFromFrontend.campaignTitle,
+            messageTemplate: campaignDataFromFrontend.campaignMessage,
+            instanceName: campaignDataFromFrontend.evolutionInstance,
+            contactSource: campaignDataFromFrontend.contactSource,
+            chatwootLabel: campaignDataFromFrontend.chatwootLabel, // Puede ser null
+            multimediaUrl: campaignDataFromFrontend.multimediaUrl, // Puede ser null
+            sendIntervalSeconds: campaignDataFromFrontend.sendInterval,
+            status: 'pendiente', // Cambiado de 'iniciada' a 'pendiente'
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            contacts: contacts, // Lista de contactos con su estado individual
+            summary: {
+                totalContacts: contacts.length,
+                sent: 0,
+                failed: 0,
+                pending: contacts.length
+            }
+        };
+
+        // 4. Guardar el archivo JSON de la campaña
+        await fs.writeFile(campaignFilePath, JSON.stringify(campaignJson, null, 2), 'utf-8');
+        console.log(`[API] Campaña ${campaignId} guardada en ${campaignFilePath} con estado 'pendiente'.`);
+
+        // 5. YA NO Iniciar el proceso de envío en segundo plano automáticamente
+        // processBulkCampaignInBackground(campaignFilePath, evolutionApiConfig); 
+
+        res.status(201).json({ success: true, message: `Campaña '${campaignId}' creada y guardada como pendiente. ${contacts.length} contactos listos.`, campaignId: campaignId }); // Cambiado status a 201 y mensaje
 
     } catch (error) {
-        console.error("API Error al procesar la venta:", error.message, error.stack, error);
-        const errorMessage = error.message || 'Error al procesar la venta.';
-        const statusCode = error.statusCode || (error.success === false ? 400 : 500);
-        res.status(statusCode).json({ success: false, message: errorMessage, details: error.details || null });
+        console.error('[API] Error al crear campaña masiva:', error);
+        res.status(500).json({ success: false, message: 'Error interno del servidor al iniciar la campaña.' });
+    }
+};
+
+export const apiUpdateBulkCampaign = async (req, res) => {
+    const { campaignId } = req.params;
+    const updatedData = req.body;
+    const campaignFileName = `${campaignId}.json`;
+    const campaignFilePath = path.join(process.cwd(), 'data', campaignFileName);
+
+    console.log(`[API] Solicitud para actualizar campaña ${campaignId} con datos:`, updatedData);
+
+    try {
+        let campaignJson;
+        try {
+            const fileContent = await fs.readFile(campaignFilePath, 'utf-8');
+            campaignJson = JSON.parse(fileContent);
+        } catch (readError) {
+            if (readError.code === 'ENOENT') {
+                return res.status(404).json({ success: false, message: 'Campaña no encontrada para actualizar.' });
+            }
+            console.error(`[API] Error leyendo archivo de campaña ${campaignId} para actualizar:`, readError);
+            return res.status(500).json({ success: false, message: 'Error al leer datos de la campaña.' });
+        }
+
+        if (campaignJson.status !== 'pendiente') {
+            return res.status(400).json({ success: false, message: `Solo se pueden editar campañas en estado 'pendiente'. Estado actual: ${campaignJson.status}` });
+        }
+
+        // Campos que se pueden actualizar directamente
+        campaignJson.title = updatedData.campaignTitle || campaignJson.title;
+        campaignJson.messageTemplate = updatedData.campaignMessage || campaignJson.messageTemplate;
+        campaignJson.instanceName = updatedData.evolutionInstance || campaignJson.instanceName;
+        campaignJson.multimediaUrl = updatedData.multimediaUrl !== undefined ? updatedData.multimediaUrl : campaignJson.multimediaUrl; // Permite URL vacía
+        campaignJson.sendIntervalSeconds = updatedData.sendInterval || campaignJson.sendIntervalSeconds;
+        
+        // Si la fuente de contactos o la etiqueta cambian, se debe regenerar la lista de contactos
+        const sourceChanged = campaignJson.contactSource !== updatedData.contactSource;
+        const labelChanged = campaignJson.contactSource === 'chatwoot_label' && campaignJson.chatwootLabel !== updatedData.chatwootLabel;
+        const manualListChanged = campaignJson.contactSource === 'manual_list' && campaignJson.manualContacts !== updatedData.manualContacts; // Asumiendo que manualContacts viene en updatedData
+
+        if (sourceChanged || labelChanged || manualListChanged) {
+            console.log('[API] Fuente de contactos o etiqueta cambiada, regenerando lista de contactos...');
+            let newContacts = [];
+            const appConfig = await readAppSettings();
+
+            campaignJson.contactSource = updatedData.contactSource || campaignJson.contactSource; // Actualizar fuente
+            campaignJson.chatwootLabel = updatedData.chatwootLabel; // Actualizar etiqueta (puede ser null)
+            
+            // Lógica similar a apiStartBulkCampaign para obtener contactos
+            if (campaignJson.contactSource === 'chatwoot_label' && campaignJson.chatwootLabel) {
+                if (!appConfig.chatwoot_api?.url || !appConfig.chatwoot_api?.account_id || !appConfig.chatwoot_api?.token) {
+                    return res.status(400).json({ success: false, message: 'Configuración de Chatwoot API incompleta.' });
+                }
+                newContacts = await getChatwootContactsWithLabel(appConfig.chatwoot_api.url, appConfig.chatwoot_api.account_id, appConfig.chatwoot_api.token, campaignJson.chatwootLabel);
+            } else if (campaignJson.contactSource === 'chatwoot_all') {
+                if (!appConfig.chatwoot_api?.url || !appConfig.chatwoot_api?.account_id || !appConfig.chatwoot_api?.token) {
+                     return res.status(400).json({ success: false, message: 'Configuración de Chatwoot API incompleta.' });
+                }
+                newContacts = await getAllChatwootContacts(appConfig.chatwoot_api.url, appConfig.chatwoot_api.account_id, appConfig.chatwoot_api.token);
+            } else if (campaignJson.contactSource === 'evolution_api') {
+                const { evolution_api: evoConfig } = appConfig;
+                if (!evoConfig?.url || !evoConfig?.token || !campaignJson.instanceName) {
+                    return res.status(400).json({ success: false, message: 'Configuración de Evolution API o instancia no completa para actualizar contactos.' });
+                }
+                newContacts = await getEvolutionContacts(
+                    evoConfig.url,
+                    evoConfig.token,
+                    campaignJson.instanceName // Usar la instancia ya guardada en la campaña
+                );
+            } else if (campaignJson.contactSource === 'manual_list' && updatedData.manualContacts) {
+                 newContacts = updatedData.manualContacts.split('\n').map(line => line.trim()).filter(line => line).map((phone, index) => ({ id: `manual_edit_${index + 1}`, phone, nombre_cliente: '', apellido_cliente: '', status: 'pendiente' }));
+            }
+            // TODO: Añadir lógica para otras fuentes si es necesario (CSV, WooCommerce)
+
+            if (newContacts.length === 0 && (campaignJson.contactSource === 'chatwoot_label' || campaignJson.contactSource === 'chatwoot_all' || campaignJson.contactSource === 'manual_list' || campaignJson.contactSource === 'evolution_api')) {
+                 return res.status(400).json({ success: false, message: 'No se encontraron contactos para la nueva fuente seleccionada.' });
+            }
+            
+            // Mapear y limpiar números de teléfono para las nuevas fuentes de Chatwoot
+            // Para Evolution API, el mapeo y limpieza ya se hace en getEvolutionContacts
+            if (campaignJson.contactSource === 'chatwoot_label' || campaignJson.contactSource === 'chatwoot_all') {
+                newContacts = newContacts.map(c => {
+                    let phoneNumber = c.phone || '';
+                    phoneNumber = phoneNumber.replace(/[^\d+]/g, '');
+                    if (phoneNumber.startsWith('+')) phoneNumber = phoneNumber.substring(1);
+                    return { id: c.id_chatwoot, phone: phoneNumber, nombre_cliente: c.name ? c.name.split(' ')[0] : '', apellido_cliente: c.name ? c.name.split(' ').slice(1).join(' ') : '', email: c.email, status: 'pendiente' };
+                }).filter(c => c.phone);
+            }
+
+            campaignJson.contacts = newContacts;
+            campaignJson.summary = {
+                totalContacts: newContacts.length,
+                sent: 0,
+                failed: 0,
+                pending: newContacts.length
+            };
+        }
+
+        campaignJson.updatedAt = new Date().toISOString();
+        await fs.writeFile(campaignFilePath, JSON.stringify(campaignJson, null, 2), 'utf-8');
+        
+        res.json({ success: true, message: `Campaña ${campaignId} actualizada exitosamente.`, data: campaignJson });
+
+    } catch (error) {
+        console.error(`[API] Error al actualizar la campaña ${campaignId}:`, error);
+        res.status(500).json({ success: false, message: 'Error interno al actualizar la campaña.' });
+    }
+};
+
+export const apiGetBulkCampaignDetails = async (req, res) => {
+    const { campaignId } = req.params;
+    const campaignFileName = `${campaignId}.json`;
+    const campaignFilePath = path.join(process.cwd(), 'data', campaignFileName);
+
+    console.log(`[API] Solicitud para obtener detalles de campaña ${campaignId}`);
+
+    try {
+        const fileContent = await fs.readFile(campaignFilePath, 'utf-8');
+        const campaignJson = JSON.parse(fileContent);
+        res.json({ success: true, data: campaignJson });
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            return res.status(404).json({ success: false, message: 'Campaña no encontrada.' });
+        }
+        console.error(`[API] Error leyendo archivo de campaña ${campaignId} para detalles:`, error);
+        return res.status(500).json({ success: false, message: 'Error al leer datos de la campaña.' });
+    }
+};
+
+export const apiResetBulkCampaign = async (req, res) => {
+    const { campaignId } = req.params;
+    const campaignFileName = `${campaignId}.json`;
+    const campaignFilePath = path.join(process.cwd(), 'data', campaignFileName);
+
+    console.log(`[API] Solicitud para reiniciar campaña ${campaignId}`);
+
+    try {
+        let campaignJson;
+        try {
+            const fileContent = await fs.readFile(campaignFilePath, 'utf-8');
+            campaignJson = JSON.parse(fileContent);
+        } catch (readError) {
+            if (readError.code === 'ENOENT') {
+                return res.status(404).json({ success: false, message: 'Campaña no encontrada para reiniciar.' });
+            }
+            console.error(`[API] Error leyendo archivo de campaña ${campaignId} para reiniciar:`, readError);
+            return res.status(500).json({ success: false, message: 'Error al leer datos de la campaña.' });
+        }
+
+        // Solo permitir reiniciar campañas que no estén activas o pendientes
+        if (campaignJson.status === 'en_progreso' || campaignJson.status === 'iniciada' || campaignJson.status === 'pendiente') {
+            return res.status(400).json({ success: false, message: `No se puede reiniciar una campaña en estado '${campaignJson.status}'. Paúsela o espere a que termine.` });
+        }
+
+        campaignJson.status = 'pendiente';
+        campaignJson.summary.sent = 0;
+        campaignJson.summary.failed = 0;
+        campaignJson.summary.pending = campaignJson.contacts.length;
+        
+        campaignJson.contacts.forEach(contact => {
+            contact.status = 'pendiente';
+            delete contact.sentAt;
+            delete contact.error;
+        });
+
+        campaignJson.updatedAt = new Date().toISOString();
+        await fs.writeFile(campaignFilePath, JSON.stringify(campaignJson, null, 2), 'utf-8');
+        
+        res.json({ success: true, message: `Campaña ${campaignId} reiniciada y marcada como pendiente.` });
+
+    } catch (error) {
+        console.error(`[API] Error al reiniciar la campaña ${campaignId}:`, error);
+        res.status(500).json({ success: false, message: 'Error interno al reiniciar la campaña.' });
+    }
+};
+
+export const apiManuallyStartBulkCampaign = async (req, res) => {
+    const { campaignId } = req.params;
+    const campaignFileName = `${campaignId}.json`;
+    const campaignFilePath = path.join(process.cwd(), 'data', campaignFileName);
+    const { evolution_api: evolutionApiConfig } = await readAppSettings();
+
+    console.log(`[API] Solicitud para iniciar manualmente campaña ${campaignId}`);
+
+    try {
+        let campaignJson;
+        try {
+            const fileContent = await fs.readFile(campaignFilePath, 'utf-8');
+            campaignJson = JSON.parse(fileContent);
+        } catch (readError) {
+            if (readError.code === 'ENOENT') {
+                return res.status(404).json({ success: false, message: 'Campaña no encontrada para iniciar.' });
+            }
+            console.error(`[API] Error leyendo archivo de campaña ${campaignId} para iniciar:`, readError);
+            return res.status(500).json({ success: false, message: 'Error al leer datos de la campaña.' });
+        }
+
+        if (campaignJson.status !== 'pendiente') {
+            return res.status(400).json({ success: false, message: `La campaña no está en estado 'pendiente'. Estado actual: ${campaignJson.status}` });
+        }
+        
+        campaignJson.status = 'iniciada'; // El worker cambiará esto a 'en_progreso'
+        campaignJson.updatedAt = new Date().toISOString();
+        await fs.writeFile(campaignFilePath, JSON.stringify(campaignJson, null, 2), 'utf-8');
+        
+        console.log(`[API] Campaña ${campaignId} marcada como 'iniciada'. Disparando worker...`);
+        processBulkCampaignInBackground(campaignFilePath, evolutionApiConfig); // No usamos await
+
+        res.json({ success: true, message: `Campaña ${campaignId} iniciada y ahora está en proceso.` });
+
+    } catch (error) {
+        console.error(`[API] Error al iniciar manualmente la campaña ${campaignId}:`, error);
+        res.status(500).json({ success: false, message: 'Error interno al iniciar la campaña.' });
+    }
+};
+
+// Función para procesar la campaña en segundo plano
+async function processBulkCampaignInBackground(campaignFilePath, evolutionApiConfig) {
+    console.log(`[Worker] Iniciando procesamiento para: ${campaignFilePath}`);
+    try {
+        let campaignJson = JSON.parse(await fs.readFile(campaignFilePath, 'utf-8'));
+        
+        // Si la campaña ya está completada, en error o explícitamente pausada por el usuario, no hacer nada.
+        if (campaignJson.status === 'completada' || campaignJson.status === 'error_procesamiento' || campaignJson.status === 'pausada') {
+            console.log(`[Worker] Campaña ${campaignJson.id} en estado '${campaignJson.status}'. No se procesará.`);
+            return;
+        }
+
+        // Si estaba 'iniciada' o 'en_progreso_pausada' (o un estado de reanudación), marcarla como 'en_progreso'.
+        // 'en_progreso_pausada' es un estado que podríamos usar si queremos diferenciar una pausa de worker de una pausa de usuario.
+        // Por ahora, 'pausada' es el estado explícito del usuario.
+        if (campaignJson.status === 'iniciada' || campaignJson.status === 'en_progreso_pausada' /* o el estado que usemos para reanudar */) {
+            campaignJson.status = 'en_progreso';
+            campaignJson.updatedAt = new Date().toISOString();
+            await fs.writeFile(campaignFilePath, JSON.stringify(campaignJson, null, 2), 'utf-8');
+        }
+        // Si ya estaba 'en_progreso', simplemente continúa.
+
+        const { messageTemplate, instanceName, sendIntervalSeconds, multimediaUrl } = campaignJson;
+        const intervalMilliseconds = (sendIntervalSeconds || 5) * 1000;
+
+        for (let i = 0; i < campaignJson.contacts.length; i++) {
+            // Antes de procesar cada contacto, releer el archivo para verificar si se pausó externamente
+            try {
+                const currentCampaignStateContent = await fs.readFile(campaignFilePath, 'utf-8');
+                const currentCampaignStateJson = JSON.parse(currentCampaignStateContent);
+                if (currentCampaignStateJson.status === 'pausada') {
+                    console.log(`[Worker] Campaña ${campaignJson.id} pausada externamente. Deteniendo procesamiento.`);
+                    // Opcional: actualizar el estado de la campaña actual a 'en_progreso_pausada' si queremos diferenciar
+                    // campaignJson.status = 'en_progreso_pausada';
+                    // await fs.writeFile(campaignFilePath, JSON.stringify(campaignJson, null, 2), 'utf-8');
+                    return; // Salir del worker
+                }
+                // Actualizar campaignJson con el estado más reciente por si otros campos cambiaron (aunque no es el caso aquí)
+                campaignJson = currentCampaignStateJson; 
+            } catch (readError) {
+                console.error(`[Worker] Error releyendo estado de campaña ${campaignJson.id} durante el bucle:`, readError);
+                // Decidir si continuar o detenerse. Por seguridad, podríamos detenernos.
+                return;
+            }
+
+            const contact = campaignJson.contacts[i];
+            if (contact.status === 'pendiente') {
+                console.log(`[Worker] Procesando contacto ${i + 1}/${campaignJson.contacts.length}: ${contact.phone} para campaña ${campaignJson.id}`);
+                try {
+                    // Simular reemplazo de placeholders
+                    let personalizedMessage = messageTemplate
+                        .replace(/{nombre_cliente}/g, contact.nombre_cliente || '')
+                        .replace(/{apellido_cliente}/g, contact.apellido_cliente || '')
+                        .replace(/{telefono_cliente}/g, contact.phone || '');
+                    
+                    // TODO: Integrar el envío real con evolutionApiService.js
+                    // console.log(`[Worker] SIMULANDO envío a ${contact.phone}: "${personalizedMessage}" con instancia ${instanceName}`);
+                    await sendEvoWhatsAppMessageService(
+                        evolutionApiConfig.url, 
+                        evolutionApiConfig.token, 
+                        instanceName, 
+                        contact.phone, 
+                        personalizedMessage, 
+                        { multimediaUrl: multimediaUrl } // Pasar multimediaUrl a las opciones
+                    );
+                    console.log(`[Worker] Mensaje enviado a ${contact.phone} para campaña ${campaignJson.id}`);
+                    contact.status = 'enviado';
+                    contact.sentAt = new Date().toISOString();
+                    campaignJson.summary.sent++;
+                    
+                } catch (sendError) {
+                    console.error(`[Worker] Error enviando a ${contact.phone} para campaña ${campaignJson.id}:`, sendError.message);
+                    contact.status = 'fallido';
+                    contact.error = sendError.message;
+                    campaignJson.summary.failed++;
+                }
+                campaignJson.summary.pending--;
+                campaignJson.contacts[i] = contact; // Actualizar el contacto en el array
+                campaignJson.updatedAt = new Date().toISOString();
+                await fs.writeFile(campaignFilePath, JSON.stringify(campaignJson, null, 2), 'utf-8'); // Guardar después de cada intento
+
+                // Esperar antes del siguiente, excepto para el último
+                if (i < campaignJson.contacts.length - 1) {
+                    console.log(`[Worker] Esperando ${sendIntervalSeconds} segundos...`);
+                    await new Promise(resolve => setTimeout(resolve, intervalMilliseconds));
+                }
+            }
+        }
+
+        campaignJson.status = 'completada';
+        campaignJson.updatedAt = new Date().toISOString();
+        await fs.writeFile(campaignFilePath, JSON.stringify(campaignJson, null, 2), 'utf-8');
+        console.log(`[Worker] Campaña ${campaignJson.id} completada.`);
+
+    } catch (error) {
+        console.error(`[Worker] Error procesando campaña desde ${campaignFilePath}:`, error);
+        // Opcional: actualizar el JSON de la campaña a un estado de error general
+        try {
+            let campaignJsonOnError = JSON.parse(await fs.readFile(campaignFilePath, 'utf-8'));
+            campaignJsonOnError.status = 'error_procesamiento';
+            campaignJsonOnError.errorMessage = error.message;
+            campaignJsonOnError.updatedAt = new Date().toISOString();
+            await fs.writeFile(campaignFilePath, JSON.stringify(campaignJsonOnError, null, 2), 'utf-8');
+        } catch (writeError) {
+            console.error(`[Worker] Error fatal al intentar actualizar estado de error de campaña ${campaignFilePath}:`, writeError);
+        }
+    }
+}
+
+
+export const apiProcessSale = async (req, res) => {
+    const saleData = req.body;
+    const { wp_site_url: wpSiteUrl, api_token: apiToken } = req.session;
+    const currentUser = req.session.user; 
+    if (!wpSiteUrl || !apiToken) return res.status(401).json({ success: false, message: 'Autenticación requerida.' });
+    if (!saleData.cart?.length) return res.status(400).json({ success: false, message: 'El carrito está vacío.' });
+    if (saleData.customerId == null) return res.status(400).json({ success: false, message: 'El cliente es requerido.' }); // Allow 0
+    if (!saleData.paymentMethod) return res.status(400).json({ success: false, message: 'El método de pago es requerido.' });
+    if (saleData.saleType === 'suscripcion' && (!saleData.subscriptionTitle || !saleData.subscriptionExpiry)) {
+        return res.status(400).json({ success: false, message: 'Para suscripciones, título y vencimiento son obligatorios.' });
+    }
+    try {
+        const { createWPSale } = await import('../services/wpApiService.js');
+        const saleResultFromWP = await createWPSale(wpSiteUrl, apiToken, saleData, currentUser);
+        res.status(201).json({ success: true, message: 'Venta procesada y registrada en WordPress.', data: saleResultFromWP });
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Error al procesar la venta.', details: error.details });
+    }
+};
+
+export const apiGetBulkCampaigns = async (req, res) => {
+    const dataDir = path.join(process.cwd(), 'data');
+    try {
+        const files = await fs.readdir(dataDir);
+        const campaignFiles = files.filter(file => file.startsWith('campaign_') && file.endsWith('.json'));
+        
+        let campaigns = [];
+        for (const file of campaignFiles) {
+            try {
+                const filePath = path.join(dataDir, file);
+                const fileContent = await fs.readFile(filePath, 'utf-8');
+                const campaignJson = JSON.parse(fileContent);
+                // Extraer solo la información resumen necesaria para la tabla
+                campaigns.push({
+                    id: campaignJson.id,
+                    title: campaignJson.title,
+                    createdAt: campaignJson.createdAt,
+                    status: campaignJson.status,
+                    totalContacts: campaignJson.summary?.totalContacts || 0,
+                    sent: campaignJson.summary?.sent || 0,
+                    failed: campaignJson.summary?.failed || 0,
+                    contactSource: campaignJson.contactSource,
+                    chatwootLabel: campaignJson.chatwootLabel
+                });
+            } catch (parseError) {
+                console.error(`Error al parsear el archivo de campaña ${file}:`, parseError);
+                // Omitir este archivo si no se puede parsear
+            }
+        }
+        // Ordenar por fecha de creación descendente
+        campaigns.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        // Para DataTables, se espera un objeto con una propiedad 'data' que es el array de items
+        res.json({ data: campaigns });
+
+    } catch (error) {
+        console.error('[API] Error al listar campañas masivas:', error);
+        res.status(500).json({ success: false, message: 'Error interno del servidor al listar las campañas.', data: [] });
+    }
+};
+
+export const apiDeleteBulkCampaign = async (req, res) => {
+    const { campaignId } = req.params;
+    if (!campaignId || !campaignId.startsWith('campaign_') || !campaignId.endsWith('.json')) {
+        // Validar un poco el formato del campaignId para seguridad
+        // El frontend enviará solo el ID base, ej: "campaign_1749448288021_3vp7g"
+        // Así que aquí podríamos necesitar componer el nombre del archivo o esperar el nombre completo.
+        // Por ahora, asumimos que campaignId es el nombre completo del archivo JSON.
+        // O mejor, el frontend solo envía el ID y el backend construye el nombre del archivo.
+        // Vamos a asumir que el frontend envía el ID sin .json
+        const campaignFileName = `${campaignId}.json`;
+        const campaignFilePath = path.join(process.cwd(), 'data', campaignFileName);
+        console.log(`[API] Solicitud para eliminar campaña: ${campaignId} (archivo: ${campaignFileName})`);
+
+
+        if (!campaignId.startsWith('campaign_')) { // Chequeo simple
+             return res.status(400).json({ success: false, message: 'ID de campaña inválido.' });
+        }
+
+
+        try {
+            await fs.unlink(campaignFilePath);
+            console.log(`[API] Campaña ${campaignFileName} eliminada exitosamente.`);
+            res.json({ success: true, message: `Campaña ${campaignId} eliminada.` });
+        } catch (error) {
+            if (error.code === 'ENOENT') {
+                console.warn(`[API] Intento de eliminar campaña no encontrada: ${campaignFileName}`);
+                return res.status(404).json({ success: false, message: 'Campaña no encontrada.' });
+            }
+            console.error(`[API] Error al eliminar la campaña ${campaignFileName}:`, error);
+            res.status(500).json({ success: false, message: 'Error interno del servidor al eliminar la campaña.' });
+        }
+    } else {
+         // Si el campaignId no tiene el formato esperado (ej. no incluye .json y no lo estamos añadiendo)
+         // Esto es un fallback si la lógica de arriba cambia.
+         // Por ahora, la lógica de arriba debería manejarlo.
+        return res.status(400).json({ success: false, message: 'Formato de ID de campaña inválido.' });
     }
 };

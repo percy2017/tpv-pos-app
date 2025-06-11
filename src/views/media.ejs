@@ -1,0 +1,206 @@
+<%- include('partials/header', { title: 'Biblioteca Multimedia' }) %>
+<%- include('partials/navigation', { title: 'Biblioteca Multimedia' }) %>
+
+<main class="container-fluid">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="card-title mb-0">
+                <i class="bi bi-images me-2"></i>Biblioteca Multimedia
+            </h5>
+        </div>
+        <div class="card-body">
+            <!-- <p>Aquí se mostrarán los archivos multimedia de Chatwoot en una tabla.</p> -->
+            <table id="mediaTable" class="table table-striped table-bordered" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Miniatura</th>
+                        <!-- <th>Nombre Archivo</th> -->
+                        <th>Tipo</th>
+                        <th>Tamaño</th>
+                        <th>Dimensiones</th>
+                        <th>Remitente</th>
+                        <th>Conversación ID</th>
+                        <th>Fecha</th>
+                        <!-- <th>Acciones</th> -->
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Los datos se cargarán aquí por DataTables -->
+                </tbody>
+            </table>
+            <div id="conversationPaginationContainer" class="mt-4 d-flex justify-content-center">
+                <!-- Paginación para lotes de conversaciones irá aquí -->
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const mediaTableElement = $('#mediaTable');
+    const conversationPaginationContainer = document.getElementById('conversationPaginationContainer');
+    let currentConversationPage = 1;
+    let dataTableInstance;
+
+    async function loadConversationBatch(page = 1) {
+        // console.log(`Cargando lote de conversaciones, página: ${page}`);
+        try {
+            const response = await fetch(`/api/chatwoot-media?page=${page}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: `Error al cargar multimedia: ${response.statusText}` }));
+                throw new Error(errorData.error || `Error ${response.status}`);
+            }
+            const result = await response.json();
+            // console.log(`Datos recibidos del backend para página de conversación ${page}:`, JSON.parse(JSON.stringify(result))); // Log de result
+            const attachments = result.data || [];
+            // console.log('Adjuntos para DataTables (lote actual):', JSON.parse(JSON.stringify(attachments))); // Log de attachments
+            currentConversationPage = result.currentPage || 1;
+            const totalConversationPages = result.totalPages || 0;
+
+            if (dataTableInstance) {
+                dataTableInstance.destroy();
+                mediaTableElement.find('tbody').empty(); // Limpiar cuerpo de la tabla antes de reinicializar
+            }
+
+            if (attachments.length === 0 && currentConversationPage === 1) {
+                mediaTableElement.find('tbody').html('<tr><td colspan="9" class="text-center">No se encontraron archivos multimedia en Chatwoot.</td></tr>');
+                renderConversationPagination(0, 1); // No mostrar paginación si no hay datos
+                return;
+            }
+            
+            dataTableInstance = mediaTableElement.DataTable({
+                data: attachments,
+                responsive: true,
+                language: {
+                    url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json',
+                    processing: '<i class="fas fa-spinner fa-spin fa-2x fa-fw"></i><span class="sr-only">Cargando...</span>'
+                },
+                columns: [
+                    { 
+                        data: null, title: "Miniatura", orderable: false,
+                        render: function(data, type, row) {
+                            const thumbnailUrl = row.thumb_url || row.data_url;
+                            if (row.file_type === 'image' && thumbnailUrl) {
+                                return `<img src="${thumbnailUrl}" alt="${row.file_name || 'Imagen'}" style="max-height: 50px; max-width: 70px; cursor:pointer;" onclick="window.open('${row.data_url}', '_blank')">`;
+                            } else if (row.file_type === 'video' && row.data_url) {
+                                return `<video src="${row.data_url}" style="max-height: 50px; max-width: 70px;" controls></video>`;
+                            } else if (row.file_type === 'audio' && row.data_url) {
+                                return '<i class="bi bi-file-earmark-music" style="font-size: 2rem;"></i>';
+                            } else if (row.data_url) { return '<i class="bi bi-file-earmark-text" style="font-size: 2rem;"></i>'; }
+                            return 'N/A';
+                        }
+                    },
+                    // { data: 'file_name', title: "Nombre Archivo", defaultContent: "N/A" },
+                    { data: 'file_type', title: "Tipo", defaultContent: "N/A" },
+                    { 
+                        data: 'file_size', title: "Tamaño",
+                        render: function(data, type, row) {
+                            if (data) {
+                                const bytes = parseInt(data, 10);
+                                if (bytes === 0) return '0 Bytes'; const k = 1024;
+                                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+                                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                            } return 'N/A';
+                        }
+                    },
+                    {
+                        data: null, title: "Dimensiones",
+                        render: function(data, type, row) {
+                            if (row.file_type === 'image' && row.width && row.height) { return `${row.width} x ${row.height}`; }
+                            return 'N/A';
+                        }
+                    },
+                    { data: 'sender_name', title: "Remitente", defaultContent: "Desconocido" },
+                    { data: 'conversation_id', title: "Conv. ID" },
+                    { 
+                        data: 'created_at', title: "Fecha",
+                        render: function(data, type, row) { return data ? new Date(data * 1000).toLocaleDateString() : 'N/A'; }
+                    },
+                    // {
+                    //     data: null, title: "Acciones", orderable: false,
+                    //     render: function(data, type, row) {
+                    //         if (row.data_url) { return `<a href="${row.data_url}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> Ver</a>`; }
+                    //         return '';
+                    //     }
+                    // }
+                ],
+                order: [[6, 'desc']], // Ordenar por Fecha (columna 7)
+                // Deshabilitar paginación interna de DataTables si solo mostramos un lote
+                paging: true, // O false si no quieres paginación de DT para el lote actual
+                searching: true, // Habilitar búsqueda de DT para el lote actual
+                info: true // Mostrar información de DT para el lote actual
+            });
+
+            renderConversationPagination(totalConversationPages, currentConversationPage);
+
+        } catch (error) {
+            console.error('Error al cargar multimedia de Chatwoot:', error);
+            if (dataTableInstance) dataTableInstance.destroy();
+            mediaTableElement.find('tbody').html(`<tr><td colspan="9" class="text-center text-danger">Error: ${error.message}</td></tr>`);
+            renderConversationPagination(0,1);
+        }
+    }
+
+    function renderConversationPagination(totalPages, page) {
+        conversationPaginationContainer.innerHTML = '';
+        if (totalPages <= 1) return;
+
+        const ul = document.createElement('ul');
+        ul.className = 'pagination';
+
+        const prevLi = document.createElement('li');
+        prevLi.className = `page-item ${page === 1 ? 'disabled' : ''}`;
+        const prevA = document.createElement('a');
+        prevA.className = 'page-link';
+        prevA.href = '#';
+        prevA.textContent = 'Lote Anterior';
+        prevA.addEventListener('click', (e) => {
+            e.preventDefault(); if (page > 1) loadConversationBatch(page - 1);
+        });
+        prevLi.appendChild(prevA);
+        ul.appendChild(prevLi);
+
+        // Info de página actual de lotes
+        const pageInfoLi = document.createElement('li');
+        pageInfoLi.className = 'page-item disabled';
+        const pageInfoSpan = document.createElement('span');
+        pageInfoSpan.className = 'page-link';
+        pageInfoSpan.textContent = `Lote ${page} de ${totalPages}`;
+        pageInfoLi.appendChild(pageInfoSpan);
+        ul.appendChild(pageInfoLi);
+        
+        const nextLi = document.createElement('li');
+        nextLi.className = `page-item ${page >= totalPages ? 'disabled' : ''}`;
+        const nextA = document.createElement('a');
+        nextA.className = 'page-link';
+        nextA.href = '#';
+        nextA.textContent = 'Siguiente Lote';
+        nextA.addEventListener('click', (e) => {
+            e.preventDefault(); if (page < totalPages) loadConversationBatch(page + 1);
+        });
+        nextLi.appendChild(nextA);
+        ul.appendChild(nextLi);
+
+        conversationPaginationContainer.appendChild(ul);
+    }
+
+    loadConversationBatch(currentConversationPage);
+});
+</script>
+<style>
+.media-thumbnail {
+    max-height: 150px; /* Ajusta según necesidad */
+    object-fit: cover; /* Para que las imágenes se ajusten bien */
+    width: 100%;
+}
+.media-card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+.media-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+</style>
+
+<%- include('partials/footer') %>

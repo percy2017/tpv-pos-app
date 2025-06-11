@@ -95,9 +95,9 @@ function tvp_pos_get_sales_api( WP_REST_Request $request ) {
     $orderby = 'date'; // Default
     $order_dir = 'DESC'; // Default
 
+    // Determinar ordenación (esto se aplica siempre, con o sin búsqueda)
     if ( isset( $params['order'][0]['column'] ) && isset( $params['order'][0]['dir'] ) ) {
         $column_index = intval( $params['order'][0]['column'] );
-        // Asumimos que el frontend (DataTables config en Node.js) enviará 'columns' array con 'data' names
         $column_name_from_dt = isset( $params['columns'][$column_index]['data'] ) ? $params['columns'][$column_index]['data'] : '';
         
         if ( $column_name_from_dt && isset( $orderby_map[$column_name_from_dt] ) ) {
@@ -109,12 +109,12 @@ function tvp_pos_get_sales_api( WP_REST_Request $request ) {
         }
     }
 
+    // Argumentos base para la consulta principal (se ajustarán si hay búsqueda)
     $args = array(
-        'limit'    => $limit,
-        'paged'    => $paged,
         'orderby'  => $orderby,
         'order'    => $order_dir,
         'paginate' => true, 
+        // 'limit' y 'paged' se añadirán después, dependiendo de si hay búsqueda o no
     );
 
     if ( ! empty( $params['customer_id'] ) ) {
@@ -136,42 +136,70 @@ function tvp_pos_get_sales_api( WP_REST_Request $request ) {
         $order_ids_from_text_search = array();
         $order_ids_from_phone_search = array();
 
-        // 1. Buscar por ID de pedido si el término es numérico, o por texto general (parámetro 's')
-        $text_search_args = array('return' => 'ids', 'limit' => -1); // Obtener solo IDs, sin límite de paginación para esta subconsulta
-        if (is_numeric($search_term)) {
-            $text_search_args['post__in'] = array(intval($search_term));
-        } else {
-            $text_search_args['s'] = $search_term;
+        // 1. Búsqueda por texto general de WooCommerce (usando 's') - se ejecuta siempre si hay search_term
+        //    Esto buscará en campos indexados por WC como título, contenido, extracto, y algunos metas de cliente.
+        $general_search_args = array('return' => 'ids', 'limit' => -1, 's' => $search_term);
+        // Si también se filtra por customer_id, añadirlo a la búsqueda general
+        if ( ! empty( $params['customer_id'] ) ) {
+            $general_search_args['customer_id'] = intval( $params['customer_id'] );
         }
-        $text_search_query = new WC_Order_Query($text_search_args);
-        $order_ids_from_text_search = $text_search_query->get_orders();
-        error_log('[TVP-POS DEBUG] Order IDs from TEXT search: ' . print_r($order_ids_from_text_search, true));
+        $general_search_query = new WC_Order_Query($general_search_args);
+        $order_ids_from_text_search = $general_search_query->get_orders();
+        error_log('[TVP-POS DEBUG] Order IDs from GENERAL TEXT search ("s"): ' . print_r($order_ids_from_text_search, true));
+        
+        // Adicionalmente, si el término de búsqueda es puramente numérico, podría ser un ID de pedido.
+        // Esta búsqueda es más específica y podría añadirse.
+        $order_ids_from_id_search = array();
+        if (is_numeric($search_term)) {
+            $id_search_args = array('return' => 'ids', 'limit' => -1, 'post__in' => array(intval($search_term)));
+            if ( ! empty( $params['customer_id'] ) ) { // Considerar customer_id si se busca por ID también
+                 $id_search_args['customer_id'] = intval( $params['customer_id'] );
+            }
+            $id_search_query = new WC_Order_Query($id_search_args);
+            $order_ids_from_id_search = $id_search_query->get_orders();
+            error_log('[TVP-POS DEBUG] Order IDs from ID search: ' . print_r($order_ids_from_id_search, true));
+        }
 
-        // 2. Buscar por teléfono en _billing_phone usando SQL directo
+        // 2. Buscar por teléfono en _billing_phone y _shipping_phone usando SQL directo
         global $wpdb;
-        $escaped_phone_search_sql_value = '%' . $wpdb->esc_like( trim($search_term) ) . '%';
-        $phone_sql_query = $wpdb->prepare(
-            "SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE (meta_key = '_billing_phone' OR meta_key = '_shipping_phone') AND meta_value LIKE %s",
-            $escaped_phone_search_sql_value
-        );
-        $order_ids_from_phone_search = $wpdb->get_col( $phone_sql_query );
-        error_log('[TVP-POS DEBUG] SQL Query for Phone: ' . $phone_sql_query); // Log de la consulta SQL
-        error_log('[TVP-POS DEBUG] Order IDs from PHONE search (Direct SQL): ' . print_r($order_ids_from_phone_search, true));
+        $numeric_search_term = preg_replace('/\D/', '', $search_term); // Obtener solo dígitos
+
+        if (!empty($numeric_search_term)) {
+            $escaped_phone_search_sql_value = '%' . $wpdb->esc_like( $numeric_search_term ) . '%';
+            $phone_sql_query = $wpdb->prepare(
+                "SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE (meta_key = '_billing_phone' OR meta_key = '_shipping_phone') AND meta_value LIKE %s",
+                $escaped_phone_search_sql_value
+            );
+            $order_ids_from_phone_search = $wpdb->get_col( $phone_sql_query );
+            error_log('[TVP-POS DEBUG] Numeric Search Term for Phone: ' . $numeric_search_term);
+            error_log('[TVP-POS DEBUG] SQL Query for Phone (using numeric): ' . $phone_sql_query);
+            error_log('[TVP-POS DEBUG] Order IDs from PHONE search (Direct SQL - numeric): ' . print_r($order_ids_from_phone_search, true));
+        } else {
+            $order_ids_from_phone_search = array(); // No buscar por teléfono si el término limpiado está vacío
+            error_log('[TVP-POS DEBUG] Search term did not yield a numeric string for phone search.');
+        }
         
         // Ya no se usa la WC_Order_Query para la búsqueda por teléfono con meta_query si la SQL directa es más fiable.
 
         // 3. Combinar los IDs y eliminar duplicados
-        $combined_order_ids = array_unique( array_merge( $order_ids_from_text_search, $order_ids_from_phone_search ) );
-        error_log('[TVP-POS DEBUG] Combined Order IDs: ' . print_r($combined_order_ids, true)); // Mantener este log por ahora
+        // Ahora se combinan resultados de la búsqueda general 's', la búsqueda por ID (si aplica) y la búsqueda por teléfono.
+        $combined_order_ids = array_unique( array_merge( $order_ids_from_text_search, $order_ids_from_id_search, $order_ids_from_phone_search ) );
+        error_log('[TVP-POS DEBUG] Combined Order IDs (text + id + phone): ' . print_r($combined_order_ids, true)); 
 
         if ( ! empty( $combined_order_ids ) ) {
             $args['post__in'] = $combined_order_ids;
-            // Si usamos post__in, no debemos usar 's' al mismo tiempo, ya que post__in tiene prioridad.
             unset( $args['s'] ); 
+            $args['limit'] = -1; // Obtener todos los resultados que coincidan con los IDs
+            // 'paged' no es necesario si limit es -1
         } else {
-            // Si no hay coincidencias ni por texto ni por teléfono, forzamos a que no devuelva nada.
             $args['post__in'] = array(0); 
+            $args['limit'] = $limit; // Aplicar paginación normal si la búsqueda no arrojó IDs
+            $args['paged'] = $paged;
         }
+    } else {
+        // Si no hay término de búsqueda, aplicar paginación normal
+        $args['limit'] = $limit;
+        $args['paged'] = $paged;
     }
 
 
@@ -180,7 +208,41 @@ function tvp_pos_get_sales_api( WP_REST_Request $request ) {
     $results = $query->get_orders();
 
     $orders = $results->orders;
-    $total_orders = $results->total;
+    // $total_orders es el total de la consulta paginada, que puede no ser el total filtrado real si post__in se usó.
+    $query_total_after_pagination_and_filters = $results->total;
+
+    // Determinar recordsFiltered correctamente
+    $recordsFiltered_count = 0;
+    if (!empty($search_term)) {
+        if (!empty($combined_order_ids)) {
+            $recordsFiltered_count = count($combined_order_ids);
+        } else {
+            $recordsFiltered_count = 0; // No se encontraron IDs combinados
+        }
+    } else {
+        // Si no hay término de búsqueda, recordsFiltered es el total de la consulta (que ya tiene otros filtros como customer_id si se aplicó)
+        // Para recordsTotal, necesitaríamos una consulta sin el search_term.
+        // Por ahora, si no hay search_term, asumimos que query_total_after_pagination_and_filters es el total filtrado (por otros filtros) y también el total general.
+        // Esto necesitará refinamiento para un recordsTotal verdaderamente global.
+        $recordsFiltered_count = $query_total_after_pagination_and_filters;
+    }
+    
+    // Para recordsTotal, necesitamos el conteo total de pedidos que cumplen con los filtros base (customer_id si está presente),
+    // antes de aplicar el search_term.
+    $args_for_total = array(
+        'status'   => array_keys( wc_get_order_statuses() ), // Considerar todos los estados para el total
+        'limit'    => 1, // Solo necesitamos el conteo
+        'paginate' => true, // Necesario para que ->total funcione
+    );
+    if ( ! empty( $params['customer_id'] ) ) {
+        $args_for_total['customer_id'] = intval( $params['customer_id'] );
+    }
+    // No incluir 's' ni 'post__in' de la búsqueda aquí.
+    
+    $total_query_obj = new WC_Order_Query( $args_for_total );
+    $total_query_results = $total_query_obj->get_orders();
+    $recordsTotal_count = $total_query_results->total;
+
 
     $sales_data = array();
     if ( ! empty( $orders ) ) {
@@ -227,11 +289,10 @@ function tvp_pos_get_sales_api( WP_REST_Request $request ) {
     // El controlador Node.js se encargará de añadir 'draw'.
     $response_payload = array(
         'data' => $sales_data,
-        'recordsTotal' => $total_orders,    // Total de pedidos sin filtrar (WC_Order_Query lo da así)
-        'recordsFiltered' => $total_orders, // Total de pedidos después de filtrar (WC_Order_Query lo da así con 's')
-                                         // Para una implementación más precisa de recordsFiltered si la búsqueda es compleja,
-                                         // se necesitaría una segunda consulta o lógica.
+        'recordsTotal' => (int) $recordsTotal_count,    
+        'recordsFiltered' => (int) $recordsFiltered_count, 
     );
+    error_log('[TVP-POS DEBUG] Response Payload: ' . print_r($response_payload, true));
     return new WP_REST_Response( $response_payload, 200 );
 }
 

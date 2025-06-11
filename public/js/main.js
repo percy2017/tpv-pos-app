@@ -1283,4 +1283,688 @@ $(document).ready(function() {
     }
 
     // console.log("main.js cargado y lógica de UI inicializada.");
+
+    // Lógica para la página de Mensajería Masiva WhatsApp (/whatsapp-bulk)
+    const bulkWhatsappPageContainer = $('.container-fluid'); // Un contenedor general de la página para verificar si estamos en ella.
+                                                        // O mejor, verificar por un elemento único de esta página, como la tabla de historial.
+    
+    if ($('#bulkCampaignsTable').length) { // Asumimos que si la tabla existe, estamos en la página correcta.
+        const createCampaignFormContainer = $('#createCampaignFormContainer');
+        const bulkWhatsappForm = $('#bulkWhatsappForm'); // Referencia al formulario
+        const showCreateCampaignFormBtn = $('#showCreateCampaignFormBtn');
+        const cancelCreateCampaignBtn = $('#cancelCreateCampaignBtn');
+        const bulkCampaignsTableCard = $('#bulkCampaignsTable').closest('.card'); // Para ocultar/mostrar la tabla si es necesario
+
+        const contactSourceSelect = $('#contactSource');
+        const manualContactsContainer = $('#manualContactsContainer');
+        const csvFileContainer = $('#csvFileContainer');
+        const chatwootLabelsContainer = $('#chatwootLabelsContainer'); // Nuevo
+        const chatwootLabelSelect = $('#chatwootLabelSelect'); // Nuevo
+        const evolutionInstanceSelect = $('#evolutionInstance');
+        const campaignMessageTextarea = $('#campaignMessage');
+        const formatTextBtns = $('.format-text-btn');
+        const availablePlaceholdersContainer = $('#availablePlaceholders');
+
+        // Mostrar/ocultar formulario de creación
+        showCreateCampaignFormBtn.on('click', function() {
+            createCampaignFormContainer.slideDown();
+            // Opcional: ocultar la tabla de historial para dar más espacio
+            // bulkCampaignsTableCard.slideUp(); 
+        });
+
+        cancelCreateCampaignBtn.on('click', function() {
+            createCampaignFormContainer.slideUp();
+            bulkWhatsappForm[0].reset(); // Resetear el formulario al cancelar
+            contactSourceSelect.trigger('change'); // Resetear visibilidad de campos condicionales
+            // Opcional: mostrar la tabla de historial si se ocultó
+            // bulkCampaignsTableCard.slideDown();
+        });
+
+
+        // Cargar instancias de Evolution API
+        async function loadEvolutionInstances() {
+            try {
+                const response = await fetch('/api/evolution/instances');
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'Error desconocido al cargar instancias' }));
+                    throw new Error(errorData.error || `Error ${response.status}`);
+                }
+                const instances = await response.json();
+                evolutionInstanceSelect.empty(); // Limpiar opciones existentes (como "Cargando...")
+                if (instances && instances.length > 0) {
+                    instances.forEach(instanceName => {
+                        evolutionInstanceSelect.append(new Option(instanceName, instanceName));
+                    });
+                } else {
+                    evolutionInstanceSelect.append(new Option('No hay instancias activas disponibles', '', true, true));
+                    evolutionInstanceSelect.prop('disabled', true);
+                }
+            } catch (error) {
+                console.error('Error al cargar instancias de Evolution API:', error);
+                evolutionInstanceSelect.empty();
+                evolutionInstanceSelect.append(new Option(error.message || 'Error al cargar instancias', '', true, true));
+                evolutionInstanceSelect.prop('disabled', true);
+                // Podrías mostrar un Swal.fire aquí también si es un error crítico
+            }
+        }
+
+        loadEvolutionInstances(); // Cargar al iniciar la página
+
+        // Lógica para mostrar/ocultar campos de contactos manuales y de etiquetas de Chatwoot
+        if (contactSourceSelect.length && manualContactsContainer.length && csvFileContainer.length && chatwootLabelsContainer.length) {
+            contactSourceSelect.on('change', function() {
+                const selectedSource = $(this).val();
+                manualContactsContainer.hide();
+                csvFileContainer.hide();
+                chatwootLabelsContainer.hide();
+
+                if (selectedSource === 'manual_list') {
+                    manualContactsContainer.show();
+                } else if (selectedSource === 'manual_csv') {
+                    csvFileContainer.show();
+                } else if (selectedSource === 'chatwoot_label') {
+                    chatwootLabelsContainer.show();
+                    loadChatwootLabels(); // Cargar etiquetas cuando se selecciona esta opción
+                }
+            });
+            // Disparar el evento change al cargar la página para establecer el estado inicial
+            contactSourceSelect.trigger('change');
+        }
+
+        async function loadChatwootLabels() {
+            chatwootLabelSelect.empty().append(new Option('Cargando etiquetas...', '', true, true)).prop('disabled', true);
+            try {
+                const response = await fetch('/api/chatwoot/labels');
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'Error desconocido al cargar etiquetas' }));
+                    throw new Error(errorData.error || `Error ${response.status}`);
+                }
+                const labels = await response.json();
+                chatwootLabelSelect.empty();
+                if (labels && labels.length > 0) {
+                    labels.forEach(label => {
+                        // Usamos label.title como valor y texto, ya que la API de Chatwoot usa el título para filtrar
+                        chatwootLabelSelect.append(new Option(label.title, label.title)); 
+                    });
+                    chatwootLabelSelect.prop('disabled', false);
+                } else {
+                    chatwootLabelSelect.append(new Option('No hay etiquetas disponibles', '', true, true));
+                    chatwootLabelSelect.prop('disabled', true);
+                }
+            } catch (error) {
+                console.error('Error al cargar etiquetas de Chatwoot:', error);
+                chatwootLabelSelect.empty();
+                chatwootLabelSelect.append(new Option(error.message || 'Error al cargar etiquetas', '', true, true));
+                chatwootLabelSelect.prop('disabled', true);
+            }
+        }
+
+        // Lógica para el submit del formulario de envío masivo
+        bulkWhatsappForm.on('submit', async function(event) {
+            event.preventDefault();
+            const submitButton = $(this).find('button[type="submit"]');
+            const originalButtonText = submitButton.html();
+            submitButton.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Iniciando...');
+
+            const campaignData = {
+                campaignTitle: $('#campaignTitle').val(),
+                evolutionInstance: $('#evolutionInstance').val(),
+                campaignMessage: $('#campaignMessage').val(),
+                contactSource: $('#contactSource').val(),
+                chatwootLabel: $('#contactSource').val() === 'chatwoot_label' ? $('#chatwootLabelSelect').val() : null,
+                // Para manualContacts y csvFile, necesitaremos procesarlos para obtener la lista de números.
+                // Por ahora, solo enviaremos el contenido del textarea o el nombre del archivo.
+                manualContacts: $('#contactSource').val() === 'manual_list' ? $('#manualContacts').val() : null,
+                csvFile: $('#contactSource').val() === 'manual_csv' && $('#csvFile')[0].files.length > 0 ? $('#csvFile')[0].files[0].name : null,
+                multimediaUrl: $('#multimediaUrl').val().trim() || null,
+                sendInterval: parseInt($('#sendInterval').val()) || 5,
+            };
+
+            // Validación básica (se pueden añadir más)
+            if (!campaignData.campaignTitle || !campaignData.evolutionInstance || !campaignData.campaignMessage || !campaignData.contactSource) {
+                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Campos incompletos', text: 'Por favor, completa todos los campos requeridos.', showConfirmButton: false, timer: 3000 });
+                submitButton.prop('disabled', false).html(originalButtonText);
+                return;
+            }
+            if (campaignData.contactSource === 'chatwoot_label' && !campaignData.chatwootLabel) {
+                 Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Campos incompletos', text: 'Por favor, selecciona una etiqueta de Chatwoot.', showConfirmButton: false, timer: 3000 });
+                submitButton.prop('disabled', false).html(originalButtonText);
+                return;
+            }
+            // Aquí se añadiría la lógica para leer el CSV o procesar la lista manual para obtener los números antes de enviar al backend,
+            // o enviar el archivo/texto crudo y que el backend lo procese. Por simplicidad, enviaremos crudo por ahora.
+
+            console.log("Enviando datos de campaña al backend:", campaignData);
+
+            try {
+                const response = await fetch('/api/whatsapp/start-bulk-campaign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(campaignData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'success', title: 'Éxito', text: result.message || 'Campaña creada.', showConfirmButton: false, timer: 2500 });
+                    
+                    // Ocultar y resetear el formulario
+                    createCampaignFormContainer.slideUp(); // Asegúrate que createCampaignFormContainer esté definido en este scope o pásalo
+                    bulkWhatsappForm[0].reset();
+                    contactSourceSelect.trigger('change'); // Para resetear la visibilidad de campos condicionales
+                    
+                    // Recargar la tabla de DataTables
+                    if ($('#bulkCampaignsTable').length && $.fn.DataTable.isDataTable('#bulkCampaignsTable')) {
+                        $('#bulkCampaignsTable').DataTable().ajax.reload(null, false);
+                    }
+                    // Opcional: Mostrar la tabla si estaba oculta
+                    // if (bulkCampaignsTableCard && bulkCampaignsTableCard.is(':hidden')) {
+                    //    bulkCampaignsTableCard.slideDown();
+                    // }
+                } else {
+                    Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error', text: result.message || 'No se pudo crear la campaña.', showConfirmButton: false, timer: 4000 });
+                }
+            } catch (error) {
+                console.error('Error al iniciar campaña masiva:', error);
+                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error de Red', text: 'No se pudo conectar con el servidor.', showConfirmButton: false, timer: 3000 });
+            } finally {
+                submitButton.prop('disabled', false).html(originalButtonText);
+            }
+        });
+
+        // Lógica para los botones de formato de texto
+        formatTextBtns.on('click', function() {
+            const format = $(this).data('format');
+            const textarea = campaignMessageTextarea[0];
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const selectedText = textarea.value.substring(start, end);
+            let char = '';
+            let endChar = '';
+
+            switch (format) {
+                case 'bold': char = '*'; break;
+                case 'italic': char = '_'; break;
+                case 'strikethrough': char = '~'; break;
+                case 'monospace': char = '```'; break;
+            }
+            endChar = char; // Para la mayoría de los casos
+
+            const newText = textarea.value.substring(0, start) +
+                            char + selectedText + endChar +
+                            textarea.value.substring(end);
+            
+            textarea.value = newText;
+            campaignMessageTextarea.focus();
+            // Ajustar la selección para que quede después del texto insertado/formateado
+            if (selectedText) {
+                textarea.setSelectionRange(start + char.length, start + char.length + selectedText.length);
+            } else {
+                textarea.setSelectionRange(start + char.length, start + char.length);
+            }
+        });
+
+        // Lógica para insertar placeholders
+        availablePlaceholdersContainer.on('click', '.placeholder-tag', function() {
+            const placeholder = $(this).data('placeholder');
+            const textarea = campaignMessageTextarea[0];
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            
+            const newText = textarea.value.substring(0, start) +
+                            placeholder +
+                            textarea.value.substring(end);
+            
+            textarea.value = newText;
+            campaignMessageTextarea.focus();
+            textarea.setSelectionRange(start + placeholder.length, start + placeholder.length);
+        });
+
+        // Inicializar DataTable para el historial de campañas
+        if ($('#bulkCampaignsTable').length) {
+            $('#bulkCampaignsTable').DataTable({
+                responsive: true,
+                processing: true,
+                // serverSide: false, // Para carga inicial de todos los JSON, serverSide podría ser true si el endpoint lo soporta
+                ajax: {
+                    url: '/api/whatsapp/bulk-campaigns',
+                    dataSrc: 'data' // La respuesta del API es { data: [...] }
+                },
+                columns: [
+                    { data: 'id', render: function(data, type, row){ return `<small>${data}</small>`; } },
+                    { data: 'title' },
+                    { data: 'createdAt', render: function(data, type, row){ return data ? new Date(data).toLocaleString('es-ES') : '-'; } },
+                    { data: 'contactSource' },
+                    { data: 'chatwootLabel', defaultContent: '-' },
+                    { data: 'totalContacts' },
+                    { data: 'sent' },
+                    { data: 'failed' },
+                    { data: 'status', render: function(data, type, row){ return `<span class="badge bg-${getCampaignStatusColor(data)}">${data}</span>`; } },
+                    { 
+                        data: null,
+                        orderable: false,
+                        searchable: false,
+                        render: function(data, type, row) {
+                            let buttons = `<button class="btn btn-sm btn-info view-campaign-details-btn me-1" data-campaign-id="${row.id}" title="Ver Detalles"><i class="bi bi-eye"></i></button>`;
+                            
+                            if (row.status === 'pendiente') {
+                                buttons += `<button class="btn btn-sm btn-success start-campaign-btn me-1" data-campaign-id="${row.id}" title="Iniciar Campaña"><i class="bi bi-play-circle-fill"></i></button>`; // Color success para Iniciar
+                                buttons += `<button class="btn btn-sm btn-warning edit-campaign-btn me-1" data-campaign-id="${row.id}" title="Editar Campaña"><i class="bi bi-pencil-fill"></i></button>`; // Botón Editar
+                            } else if (row.status === 'en_progreso') {
+                                buttons += `<button class="btn btn-sm btn-warning pause-campaign-btn me-1" data-campaign-id="${row.id}" title="Pausar Campaña"><i class="bi bi-pause-fill"></i></button>`;
+                            } else if (row.status === 'pausada' || row.status === 'en_progreso_pausada') {
+                                buttons += `<button class="btn btn-sm btn-success resume-campaign-btn me-1" data-campaign-id="${row.id}" title="Reanudar Campaña"><i class="bi bi-play-fill"></i></button>`;
+                            }
+                            
+                            // Botón para reiniciar campañas completadas o fallidas
+                            if (row.status === 'completada' || row.status === 'fallida' || row.status === 'error_procesamiento') {
+                                buttons += `<button class="btn btn-sm btn-info reset-campaign-btn me-1" data-campaign-id="${row.id}" title="Reiniciar Campaña (volver a enviar a todos)"><i class="bi bi-arrow-clockwise"></i></button>`;
+                            }
+
+                            buttons += `<button class="btn btn-sm btn-danger delete-campaign-btn" data-campaign-id="${row.id}" data-campaign-title="${row.title}" title="Eliminar Campaña"><i class="bi bi-trash"></i></button>`;
+                            return buttons;
+                        }
+                    }
+                ],
+                language: { 
+                    url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json',
+                    processing: "Procesando...",
+                },
+                order: [[2, 'desc']] // Ordenar por fecha de creación descendente por defecto
+            });
+
+            // Event listener para Iniciar Campaña
+            $('#bulkCampaignsTable tbody').on('click', '.start-campaign-btn', async function () {
+                const campaignId = $(this).data('campaignId');
+                Swal.fire({
+                    title: `¿Iniciar la campaña "${campaignId}"?`,
+                    text: "La campaña comenzará a enviar mensajes.",
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, iniciar',
+                    cancelButtonText: 'No',
+                    theme: "dark"
+                }).then(async (result) => {
+                    if (result.isConfirmed) {
+                        try {
+                            const response = await fetch(`/api/whatsapp/bulk-campaigns/${campaignId}/start`, { method: 'POST' });
+                            const responseData = await response.json();
+                            if (response.ok && responseData.success) {
+                                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'success', title: 'Iniciada', text: responseData.message, showConfirmButton: false, timer: 2000 });
+                                $('#bulkCampaignsTable').DataTable().ajax.reload(null, false); // Recargar datos
+                            } else {
+                                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error', text: responseData.message || 'No se pudo iniciar la campaña.', showConfirmButton: false, timer: 3000 });
+                            }
+                        } catch (error) {
+                            Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error de Red', text: 'No se pudo conectar para iniciar la campaña.', showConfirmButton: false, timer: 3000 });
+                        }
+                    }
+                });
+            });
+
+            // Variable para almacenar el ID de la campaña en edición
+            let editingCampaignId = null;
+
+            // Event listener para Editar Campaña
+            $('#bulkCampaignsTable tbody').on('click', '.edit-campaign-btn', async function () {
+                editingCampaignId = $(this).data('campaignId');
+                if (!editingCampaignId) return;
+
+                try {
+                    const response = await fetch(`/api/whatsapp/bulk-campaigns/${editingCampaignId}/details`);
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({}));
+                        throw new Error(errData.message || `Error ${response.status} al cargar detalles de la campaña.`);
+                    }
+                    const result = await response.json();
+                    if (result.success && result.data) {
+                        const campaign = result.data;
+                        // Poblar el formulario
+                        $('#campaignTitle').val(campaign.title);
+                        $('#evolutionInstance').val(campaign.instanceName);
+                        $('#campaignMessage').val(campaign.messageTemplate);
+                        $('#contactSource').val(campaign.contactSource).trigger('change'); // trigger change para mostrar/ocultar campos dependientes
+                        
+                        if (campaign.contactSource === 'chatwoot_label' && campaign.chatwootLabel) {
+                            // Esperar a que se carguen las etiquetas y luego seleccionar
+                            // Esto es un poco más complejo si loadChatwootLabels es asíncrono y no devuelve promesa
+                            // Por ahora, asumimos que se puede setear directamente o que el usuario re-seleccionará si es necesario
+                            // Idealmente, loadChatwootLabels debería devolver una promesa
+                            $('#chatwootLabelSelect').val(campaign.chatwootLabel);
+                        } else if (campaign.contactSource === 'manual_list') {
+                            // Para lista manual, los contactos están en campaign.contacts.map(c=>c.phone).join('\n')
+                            // Pero el formulario espera el texto crudo que generó esos contactos.
+                            // Si guardamos el texto crudo en el JSON, podríamos cargarlo aquí.
+                            // Por ahora, dejamos el campo de texto manual vacío o indicamos que se debe re-ingresar.
+                            // O, si el JSON guarda el texto original de manualContacts, lo cargamos.
+                            // Asumiendo que `campaign.originalManualContactsText` podría existir:
+                            // $('#manualContacts').val(campaign.originalManualContactsText || '');
+                            // Como no lo tenemos, lo dejamos vacío por ahora.
+                             $('#manualContacts').val(campaign.contacts.map(c => c.phone).join('\n')); // Llenar con los teléfonos actuales
+                        }
+                        // CSV no se puede re-poblar fácilmente.
+
+                        $('#multimediaUrl').val(campaign.multimediaUrl || '');
+                        $('#sendInterval').val(campaign.sendIntervalSeconds || 5);
+
+                        // Cambiar botón y mostrar formulario
+                        $('#bulkWhatsappForm button[type="submit"]').html('<i class="bi bi-save-fill me-2"></i>Guardar Cambios');
+                        $('#createCampaignFormContainer').slideDown();
+                        $('html, body').animate({ scrollTop: $('#createCampaignFormContainer').offset().top }, 500);
+
+                    } else {
+                        throw new Error(result.message || 'No se pudieron cargar los datos de la campaña.');
+                    }
+                } catch (error) {
+                    Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error', text: error.message, showConfirmButton: false, timer: 3000 });
+                    editingCampaignId = null; // Resetear si falla la carga
+                }
+            });
+            
+            // Modificar el submit del formulario para manejar creación y edición
+            bulkWhatsappForm.off('submit').on('submit', async function(event) { // .off('submit') para evitar múltiples bindings si este bloque se re-ejecuta
+                event.preventDefault();
+                const submitButton = $(this).find('button[type="submit"]');
+                const originalButtonText = submitButton.html(); // Guardar el texto actual (puede ser "Iniciar" o "Guardar")
+                
+                submitButton.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Procesando...');
+
+                const campaignData = {
+                    campaignTitle: $('#campaignTitle').val(),
+                    evolutionInstance: $('#evolutionInstance').val(),
+                    campaignMessage: $('#campaignMessage').val(),
+                    contactSource: $('#contactSource').val(),
+                    chatwootLabel: $('#contactSource').val() === 'chatwoot_label' ? $('#chatwootLabelSelect').val() : null,
+                    manualContacts: $('#contactSource').val() === 'manual_list' ? $('#manualContacts').val() : null,
+                    // CSV no se maneja en edición de esta forma simple, se requeriría re-subir.
+                    multimediaUrl: $('#multimediaUrl').val().trim() || null,
+                    sendInterval: parseInt($('#sendInterval').val()) || 5,
+                };
+
+                let url, method;
+                if (editingCampaignId) {
+                    url = `/api/whatsapp/bulk-campaigns/${editingCampaignId}`;
+                    method = 'PUT';
+                } else {
+                    url = '/api/whatsapp/start-bulk-campaign';
+                    method = 'POST';
+                }
+
+                try {
+                    const response = await fetch(url, {
+                        method: method,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(campaignData)
+                    });
+                    const result = await response.json();
+
+                    if (response.ok && result.success) {
+                        Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'success', title: 'Éxito', text: result.message, showConfirmButton: false, timer: 2500 });
+                        
+                        createCampaignFormContainer.slideUp();
+                        bulkWhatsappForm[0].reset();
+                        contactSourceSelect.trigger('change');
+                        $('#bulkWhatsappForm button[type="submit"]').html('<i class="bi bi-send-fill me-2"></i>Iniciar Envío Masivo'); // Resetear botón
+                        editingCampaignId = null; // Resetear ID de edición
+                        
+                        if ($('#bulkCampaignsTable').length && $.fn.DataTable.isDataTable('#bulkCampaignsTable')) {
+                            $('#bulkCampaignsTable').DataTable().ajax.reload(null, false);
+                        }
+                    } else {
+                        Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error', text: result.message || `No se pudo ${editingCampaignId ? 'actualizar' : 'crear'} la campaña.`, showConfirmButton: false, timer: 4000 });
+                    }
+                } catch (error) {
+                    console.error(`Error al ${editingCampaignId ? 'actualizar' : 'crear'} campaña:`, error);
+                    Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error de Red', text: 'No se pudo conectar con el servidor.', showConfirmButton: false, timer: 3000 });
+                } finally {
+                    submitButton.prop('disabled', false).html(originalButtonText); // Restaurar texto original del botón
+                    if (!editingCampaignId) { // Si era creación, restaurar texto de creación
+                         $('#bulkWhatsappForm button[type="submit"]').html('<i class="bi bi-send-fill me-2"></i>Iniciar Envío Masivo');
+                    }
+                }
+            });
+
+            // Asegurarse que el botón de cancelar también resetee el modo edición
+            cancelCreateCampaignBtn.on('click', function() {
+                // createCampaignFormContainer.slideUp(); // Ya lo hace
+                // bulkWhatsappForm[0].reset(); // Ya lo hace
+                // contactSourceSelect.trigger('change'); // Ya lo hace
+                $('#bulkWhatsappForm button[type="submit"]').html('<i class="bi bi-send-fill me-2"></i>Iniciar Envío Masivo'); // Resetear texto del botón
+                editingCampaignId = null; // Resetear ID de edición
+            }); // Esta es la llave de cierre correcta para cancelCreateCampaignBtn.on('click', ...
+
+            // Event listener para Reiniciar Campaña
+            $('#bulkCampaignsTable tbody').on('click', '.reset-campaign-btn', async function () {
+                const campaignId = $(this).data('campaignId');
+                Swal.fire({
+                    title: `¿Reiniciar la campaña "${campaignId}"?`,
+                    text: "Esto marcará todos los contactos como pendientes y la campaña podrá ser iniciada de nuevo.",
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, reiniciar',
+                    cancelButtonText: 'No',
+                    confirmButtonColor: '#3085d6',
+                    cancelButtonColor: '#d33',
+                    theme: "dark"
+                }).then(async (result) => {
+                    if (result.isConfirmed) {
+                        try {
+                            const response = await fetch(`/api/whatsapp/bulk-campaigns/${campaignId}/reset`, { method: 'POST' });
+                            const responseData = await response.json();
+                            if (response.ok && responseData.success) {
+                                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'success', title: 'Reiniciada', text: responseData.message, showConfirmButton: false, timer: 2000 });
+                                $('#bulkCampaignsTable').DataTable().ajax.reload(null, false); // Recargar datos
+                            } else {
+                                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error', text: responseData.message || 'No se pudo reiniciar la campaña.', showConfirmButton: false, timer: 3000 });
+                            }
+                        } catch (error) {
+                            Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error de Red', text: 'No se pudo conectar para reiniciar la campaña.', showConfirmButton: false, timer: 3000 });
+                        }
+                    }
+                });
+            });
+
+            // Event listener para el botón de eliminar campaña
+            $('#bulkCampaignsTable tbody').on('click', '.delete-campaign-btn', function () {
+                const campaignId = $(this).data('campaignId');
+                const campaignTitle = $(this).data('campaignTitle') || campaignId;
+                const row = $(this).closest('tr');
+
+                Swal.fire({
+                    title: `¿Estás seguro de eliminar la campaña "${campaignTitle}"?`,
+                    text: "Esta acción no se puede revertir y eliminará el archivo JSON de la campaña.",
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#3085d6',
+                    confirmButtonText: 'Sí, eliminar',
+                    cancelButtonText: 'Cancelar',
+                    theme: "dark"
+                }).then(async (result) => {
+                    if (result.isConfirmed) {
+                        try {
+                            const response = await fetch(`/api/whatsapp/bulk-campaigns/${campaignId}`, {
+                                method: 'DELETE'
+                            });
+                            const responseData = await response.json();
+
+                            if (response.ok && responseData.success) {
+                                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'success', title: 'Eliminada', text: responseData.message, showConfirmButton: false, timer: 2500 });
+                                $('#bulkCampaignsTable').DataTable().row(row).remove().draw();
+                            } else {
+                                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error', text: responseData.message || 'No se pudo eliminar la campaña.', showConfirmButton: false, timer: 3000 });
+                            }
+                        } catch (error) {
+                            console.error('Error al intentar eliminar campaña:', error);
+                            Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error de Red', text: 'No se pudo conectar para eliminar la campaña.', showConfirmButton: false, timer: 3000 });
+                        }
+                    }
+                });
+            });
+
+            // Event listener para Pausar Campaña
+            $('#bulkCampaignsTable tbody').on('click', '.pause-campaign-btn', async function () {
+                const campaignId = $(this).data('campaignId');
+                // const table = $('#bulkCampaignsTable').DataTable();
+                // const row = $(this).closest('tr');
+                // const rowData = table.row(row).data();
+
+                Swal.fire({
+                    title: `¿Pausar la campaña "${campaignId}"?`,
+                    text: "La campaña dejará de enviar mensajes hasta que se reanude.",
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, pausar',
+                    cancelButtonText: 'No',
+                    theme: "dark"
+                }).then(async (result) => {
+                    if (result.isConfirmed) {
+                        try {
+                            const response = await fetch(`/api/whatsapp/bulk-campaigns/${campaignId}/pause`, { method: 'POST' });
+                            const responseData = await response.json();
+                            if (response.ok && responseData.success) {
+                                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'success', title: 'Pausada', text: responseData.message, showConfirmButton: false, timer: 2000 });
+                                $('#bulkCampaignsTable').DataTable().ajax.reload(null, false); // Recargar datos sin resetear paginación
+                            } else {
+                                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error', text: responseData.message || 'No se pudo pausar la campaña.', showConfirmButton: false, timer: 3000 });
+                            }
+                        } catch (error) {
+                            Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error de Red', text: 'No se pudo conectar para pausar.', showConfirmButton: false, timer: 3000 });
+                        }
+                    }
+                });
+            });
+
+            // Event listener para Reanudar Campaña
+            $('#bulkCampaignsTable tbody').on('click', '.resume-campaign-btn', async function () {
+                const campaignId = $(this).data('campaignId');
+                Swal.fire({
+                    title: `¿Reanudar la campaña "${campaignId}"?`,
+                    text: "La campaña continuará enviando mensajes.",
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, reanudar',
+                    cancelButtonText: 'No',
+                    theme: "dark"
+                }).then(async (result) => {
+                    if (result.isConfirmed) {
+                        try {
+                            const response = await fetch(`/api/whatsapp/bulk-campaigns/${campaignId}/resume`, { method: 'POST' });
+                            const responseData = await response.json();
+                            if (response.ok && responseData.success) {
+                                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'success', title: 'Reanudada', text: responseData.message, showConfirmButton: false, timer: 2000 });
+                                $('#bulkCampaignsTable').DataTable().ajax.reload(null, false);
+                            } else {
+                                Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error', text: responseData.message || 'No se pudo reanudar la campaña.', showConfirmButton: false, timer: 3000 });
+                            }
+                        } catch (error) {
+                            Swal.fire({ toast: true, theme: "dark", position: 'top-end', icon: 'error', title: 'Error de Red', text: 'No se pudo conectar para reanudar.', showConfirmButton: false, timer: 3000 });
+                        }
+                    }
+                });
+            });
+
+            // Event listener para Ver Detalles de Campaña
+            $('#bulkCampaignsTable tbody').on('click', '.view-campaign-details-btn', async function () {
+                const campaignId = $(this).data('campaignId');
+                const modal = new bootstrap.Modal(document.getElementById('campaignDetailsModal'));
+                
+                // Resetear y mostrar loading
+                $('#campaignDetailsModalLabel').text(`Detalles de la Campaña: ${campaignId}`);
+                $('#campaignDetailsModalLoading').show();
+                $('#campaignDetailsModalContent').hide();
+                $('#campaignDetailsModalError').hide();
+                $('#campaignContactsDetailTableBody').empty();
+
+                modal.show();
+
+                try {
+                    const response = await fetch(`/api/whatsapp/bulk-campaigns/${campaignId}/details`);
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ message: 'Error desconocido al cargar detalles.' }));
+                        throw new Error(errorData.message || `Error ${response.status}`);
+                    }
+                    const result = await response.json();
+
+                    if (result.success && result.data) {
+                        const campaign = result.data;
+                        // Poblar información general
+                        $('#modalCampaignId').text(campaign.id);
+                        $('#modalCampaignTitle').text(campaign.title);
+                        $('#modalCampaignInstance').text(campaign.instanceName);
+                        $('#modalCampaignContactSource').text(campaign.contactSource);
+
+                        if (campaign.contactSource === 'chatwoot_label' && campaign.chatwootLabel) {
+                            $('#modalCampaignChatwootLabel').text(campaign.chatwootLabel);
+                            $('#modalCampaignChatwootLabelContainer').show();
+                        } else {
+                            $('#modalCampaignChatwootLabelContainer').hide();
+                        }
+
+                        $('#modalCampaignCreatedAt').text(new Date(campaign.createdAt).toLocaleString('es-ES'));
+                        $('#modalCampaignUpdatedAt').text(new Date(campaign.updatedAt).toLocaleString('es-ES'));
+                        $('#modalCampaignStatus').html(`<span class="badge bg-${getCampaignStatusColor(campaign.status)}">${campaign.status}</span>`);
+                        $('#modalCampaignSendInterval').text(campaign.sendIntervalSeconds);
+
+                        if (campaign.multimediaUrl) {
+                            $('#modalCampaignMultimediaUrl').text(campaign.multimediaUrl).attr('href', campaign.multimediaUrl);
+                            $('#modalCampaignMultimediaUrlContainer').show();
+                        } else {
+                            $('#modalCampaignMultimediaUrlContainer').hide();
+                        }
+                        
+                        $('#modalCampaignMessage').text(campaign.messageTemplate);
+
+                        // Poblar resumen
+                        $('#modalSummaryTotal').text(campaign.summary?.totalContacts || 0);
+                        $('#modalSummarySent').text(campaign.summary?.sent || 0);
+                        $('#modalSummaryFailed').text(campaign.summary?.failed || 0);
+                        $('#modalSummaryPending').text(campaign.summary?.pending || 0);
+
+                        // Poblar tabla de contactos
+                        const contactsTableBody = $('#campaignContactsDetailTableBody');
+                        if (campaign.contacts && campaign.contacts.length > 0) {
+                            campaign.contacts.forEach((contact, index) => {
+                                const row = `<tr>
+                                    <td>${index + 1}</td>
+                                    <td>${contact.phone}</td>
+                                    <td>${contact.nombre_cliente || '-'}</td>
+                                    <td>${contact.apellido_cliente || '-'}</td>
+                                    <td><span class="badge bg-${getCampaignStatusColor(contact.status)}">${contact.status}</span></td>
+                                    <td>${contact.sentAt ? new Date(contact.sentAt).toLocaleString('es-ES') : '-'}</td>
+                                    <td>${contact.error || '-'}</td>
+                                </tr>`;
+                                contactsTableBody.append(row);
+                            });
+                        } else {
+                            contactsTableBody.append('<tr><td colspan="7" class="text-center">No hay contactos en esta campaña.</td></tr>');
+                        }
+
+                        $('#campaignDetailsModalLoading').hide();
+                        $('#campaignDetailsModalContent').show();
+                    } else {
+                        throw new Error(result.message || 'No se pudieron cargar los datos de la campaña.');
+                    }
+                } catch (error) {
+                    console.error('Error al obtener detalles de la campaña:', error);
+                    $('#campaignDetailsModalLoading').hide();
+                    $('#campaignDetailsModalError').text(error.message).show();
+                }
+            });
+
+        }
+    } // Cierre de if ($('#bulkCampaignsTable').length)
+
+    function getCampaignStatusColor(status) {
+        switch (status) {
+            case 'iniciada': return 'secondary';
+            case 'en_progreso': return 'primary';
+            case 'completada': return 'success';
+            case 'fallida':
+            case 'error_procesamiento': return 'danger';
+            case 'pausada': return 'warning';
+            case 'pendiente': return 'info'; // Color para el nuevo estado 'pendiente'
+            default: return 'light';
+        }
+    }
 });

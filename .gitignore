@@ -29,3 +29,7 @@ Thumbs.db
 # Electron app specific
 electron-app/node_modules/
 electron-app/dist_electron/
+
+
+# data
+data/

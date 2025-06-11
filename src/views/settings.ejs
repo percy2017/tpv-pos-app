@@ -47,6 +47,23 @@
                         <input type="text" class="form-control" id="socketRoom" name="socket_room" placeholder="NombreDeLaSala">
                     </div>
                 </fieldset>
+
+                <!-- Sección Chatwoot API -->
+                <fieldset class="mb-4">
+                    <legend class="h5">Configuración de Chatwoot API</legend>
+                    <div class="mb-3">
+                        <label for="chatwootApiUrl" class="form-label">URL Base de Chatwoot API</label>
+                        <input type="url" class="form-control" id="chatwootApiUrl" name="chatwoot_api_url" placeholder="https://chatwoot.ejemplo.com">
+                    </div>
+                    <div class="mb-3">
+                        <label for="chatwootAccountId" class="form-label">Account ID</label>
+                        <input type="text" class="form-control" id="chatwootAccountId" name="chatwoot_account_id" placeholder="Tu Account ID">
+                    </div>
+                    <div class="mb-3">
+                        <label for="chatwootApiToken" class="form-label">API Access Token</label>
+                        <input type="text" class="form-control" id="chatwootApiToken" name="chatwoot_api_token" placeholder="Tu API Access Token">
+                    </div>
+                </fieldset>
             </form>
         </div>
         <div class="card-footer text-end">
@@ -63,6 +80,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const n8nTestingUrlInput = document.getElementById('n8nTestingUrl');
     const socketUrlInput = document.getElementById('socketUrl');
     const socketRoomInput = document.getElementById('socketRoom');
+
+    // Chatwoot Inputs
+    const chatwootApiUrlInput = document.getElementById('chatwootApiUrl');
+    const chatwootAccountIdInput = document.getElementById('chatwootAccountId');
+    const chatwootApiTokenInput = document.getElementById('chatwootApiToken');
+
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 
     // Cargar configuración existente
@@ -86,6 +109,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 socketUrlInput.value = config.socket.url || '';
                 socketRoomInput.value = config.socket.room || '';
             }
+            if (config.chatwoot_api) {
+                chatwootApiUrlInput.value = config.chatwoot_api.url || '';
+                chatwootAccountIdInput.value = config.chatwoot_api.account_id || '';
+                chatwootApiTokenInput.value = config.chatwoot_api.token || '';
+            }
         } catch (error) {
             console.error('Error al cargar la configuración:', error);
             Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar la configuración.', theme:'dark' });
@@ -106,6 +134,11 @@ document.addEventListener('DOMContentLoaded', function() {
             socket: {
                 url: socketUrlInput.value.trim(),
                 room: socketRoomInput.value.trim()
+            },
+            chatwoot_api: {
+                url: chatwootApiUrlInput.value.trim(),
+                account_id: chatwootAccountIdInput.value.trim(),
+                token: chatwootApiTokenInput.value.trim()
             }
         };
 

@@ -464,7 +464,14 @@
                         }
 
                         if (btnConfirmSendWhatsApp && sendMessageModalInstance) {
-                            btnConfirmSendWhatsApp.addEventListener('click', async function() {
+                            // Clonar el botón para remover listeners previos
+                            const newBtnConfirmSendWhatsApp = btnConfirmSendWhatsApp.cloneNode(true);
+                            btnConfirmSendWhatsApp.parentNode.replaceChild(newBtnConfirmSendWhatsApp, btnConfirmSendWhatsApp);
+                            // Reasignar la referencia al nuevo botón
+                            // btnConfirmSendWhatsApp ahora es el nuevo nodo, pero necesitamos la referencia original para el addEventListener
+                            // Así que usamos newBtnConfirmSendWhatsApp para el listener.
+
+                            newBtnConfirmSendWhatsApp.addEventListener('click', async function() {
                                 const phoneNumber = whatsappPhoneNumberInput.value;
                                 const instanceName = evolutionInstanceSelect.value;
                                 let messageText = whatsappMessageTextInput.value;
@@ -509,8 +516,8 @@
                                     console.error('Error enviando mensaje de WhatsApp:', err);
                                     Swal.fire({title: 'Error', text: `No se pudo enviar el mensaje: ${err.message}`, icon: 'error', theme: 'dark'});
                                 } finally {
-                                    btnConfirmSendWhatsApp.disabled = false;
-                                    btnConfirmSendWhatsApp.innerHTML = 'Enviar Mensaje Ahora';
+                                    newBtnConfirmSendWhatsApp.disabled = false;
+                                    newBtnConfirmSendWhatsApp.innerHTML = 'Enviar Mensaje Ahora';
                                 }
                             });
                         }

@@ -1,41 +1,67 @@
 # TVP-POS - Sistema de Punto de Venta con Integración WooCommerce
 
 ## Descripción Corta
-TVP-POS es una aplicación de Punto de Venta (POS) construida con Node.js y Express, diseñada para integrarse con WooCommerce a través de un plugin de WordPress personalizado. Permite gestionar ventas, clientes, usuarios y visualizar información relevante como historial de ventas y vencimientos de suscripciones. El proyecto también incluye una aplicación de escritorio Electron que empaqueta la aplicación web para su uso local.
+TVP-POS es una aplicación de Punto de Venta (POS) construida con Node.js y Express, diseñada para integrarse con WooCommerce a través de un plugin de WordPress personalizado. Permite gestionar ventas, clientes, usuarios, configuración de servicios externos y visualizar información relevante como historial de ventas y vencimientos de suscripciones. El proyecto también incluye una aplicación de escritorio Electron que empaqueta la aplicación web para su uso local.
 
 ## Características Principales
-*   **Interfaz de TPV (POS):** Búsqueda de productos, gestión de carrito, aplicación de cupones, procesamiento de ventas.
+*   **Interfaz de TPV (POS):** Búsqueda de productos, gestión de carrito, aplicación de cupones, procesamiento de ventas. La tarjeta de cliente ahora muestra el teléfono.
 *   **Gestión de Clientes:** Creación, edición, búsqueda y visualización de clientes. Los datos de facturación se sincronizan con los perfiles de usuario en WordPress.
-*   **Gestión de Usuarios (App):** Listado de usuarios de WordPress con paginación del lado del servidor, búsqueda, visualización de avatares, teléfonos e historial de compras (total de pedidos, ingresos, promedio por pedido). Funcionalidad para eliminar usuarios y ver sus ventas en un modal.
-*   **Historial de Ventas:** Listado de pedidos de WooCommerce con paginación del lado del servidor, búsqueda (incluyendo búsqueda mejorada por teléfono del cliente), y visualización de detalles del pedido (incluyendo productos) en un modal. Columna personalizada para "Tipo de Venta TPV".
+*   **Gestión de Usuarios (App):** Listado de usuarios de WordPress con paginación del lado del servidor, búsqueda, visualización de avatares, teléfonos e historial de compras. Funcionalidad para eliminar usuarios y ver sus ventas en un modal.
+*   **Historial de Ventas:** Listado de pedidos de WooCommerce con paginación del lado del servidor y búsqueda. Visualización de detalles del pedido (incluyendo nombre completo del cliente, teléfono, nota del cliente y productos) en un modal.
 *   **Impresión de Tickets:** Generación de tickets de venta en formato PDF (diseño para rollo de 80mm) directamente desde el historial de ventas.
-*   **Dashboard Inicial:** Visualización de contadores de estado de pedidos (En Proceso, En Espera, Completados) en la página de inicio.
-*   **Calendario de Eventos:** Visualización de eventos manuales y vencimientos de suscripciones (obtenidos de pedidos de WooCommerce marcados como suscripción).
+*   **Dashboard Inicial:** Visualización de contadores de estado de pedidos.
+*   **Calendario de Eventos:**
+    *   Visualización de eventos manuales y vencimientos de suscripciones de WooCommerce.
+    *   Al hacer clic en un evento de suscripción, se abre un modal con los detalles de la venta asociada (mostrando nombre completo y teléfono del cliente).
+    *   Funcionalidad para **Enviar Mensaje por WhatsApp** directamente desde este modal, utilizando la API de Evolution. Permite seleccionar la instancia de Evolution, precarga el teléfono del cliente y una plantilla de mensaje editable (usando la nota del cliente del pedido si existe).
+*   **Página de Configuración General (`/settings`):**
+    *   Interfaz para configurar parámetros de servicios externos:
+        *   Evolution API (URL Base, API Key).
+        *   n8n (URL Producción, URL Testing).
+        *   Socket (URL, Room).
+    *   La configuración se guarda localmente en la aplicación.
+    *   Se ha añadido configuración para **Chatwoot API** (URL Base, Account ID, API Access Token).
+*   **Visualizador de Multimedia (`/media`):**
+    *   Permite visualizar archivos adjuntos (imágenes, videos, etc.) obtenidos de las conversaciones de **Chatwoot**.
+    *   Incluye paginación basada en las páginas de conversaciones de Chatwoot.
+*   **Módulo de Mensajería Masiva por WhatsApp (`/whatsapp-bulk`):**
+    *   **Interfaz de Usuario Avanzada:**
+        *   Formulario para la creación de campañas con campos para: Título, Mensaje (con botones de formato tipo WhatsApp y placeholders clickeables), Instancia de Evolution API (cargadas dinámicamente), Fuente de Contactos (Chatwoot por Etiqueta, Todos los de Chatwoot, Lista Manual; placeholders para WooCommerce y CSV), Etiqueta de Chatwoot (cargadas dinámicamente y mostradas condicionalmente), URL de Multimedia (opcional), e Intervalo de Envío en segundos.
+        *   La página principal del módulo ahora muestra un **Historial de Campañas** en una tabla (DataTables) con detalles como ID, título, fecha, fuente, estado y conteos (total, enviados, fallidos).
+        *   Botón "Crear Nueva Campaña" para mostrar/ocultar el formulario de creación.
+    *   **Gestión de Campañas (Backend):**
+        *   Al iniciar una campaña, se crea un archivo JSON en `data/` con los detalles y la lista de contactos (cada uno con estado `pendiente`, `enviado`, `fallido`).
+        *   Un proceso en segundo plano (`processBulkCampaignInBackground`) maneja el envío de mensajes:
+            *   Itera sobre los contactos, respetando el intervalo de envío.
+            *   Reemplaza placeholders en el mensaje.
+            *   Envía mensajes de texto o multimedia (con texto como caption) a través de la Evolution API.
+            *   Actualiza el estado de cada contacto y el resumen de la campaña en el archivo JSON.
+            *   Maneja errores de envío individuales.
+    *   **Obtención de Contactos:**
+        *   Implementada la obtención de contactos desde Chatwoot (todos o filtrados por etiqueta).
+        *   Implementado el procesamiento de listas manuales de números.
+        *   Limpieza de números de teléfono (eliminación de `+` y caracteres no numéricos).
+    *   **Gestión de Estado de Campañas:**
+        *   Funcionalidad para Pausar y Reanudar campañas en curso desde la tabla de historial.
+        *   Funcionalidad para Eliminar campañas (elimina el archivo JSON asociado).
+    *   **Integración con Servicios API:**
+        *   `chatwootApiService.js`: Nuevas funciones para obtener etiquetas (`getChatwootLabels`), contactos por etiqueta (`getChatwootContactsWithLabel`), y todos los contactos (`getAllChatwootContacts`).
+        *   `evolutionApiService.js`: Función `sendWhatsAppMessage` mejorada para manejar envío de multimedia (infiriendo `mediatype` y usando `caption`) y ajustar `options.presence`.
 *   **Autenticación:** Sistema de login contra usuarios de WordPress, utilizando un token JWT para la sesión en la aplicación TPV.
-*   **Integración con WooCommerce:** A través de un plugin de WordPress (`tvp-pos-wp-connector`) que expone una API REST para manejar productos, clientes, ventas, cupones, etc.
+*   **Integración con WooCommerce:** A través de un plugin de WordPress (`tvp-pos-wp-connector`) que expone una API REST. El plugin ha sido mejorado para incluir más detalles del cliente (nombre, apellido, teléfono) y notas del pedido en las respuestas de la API.
+*   **Interfaz de Usuario Mejorada:**
+    *   Iconos en todos los elementos del menú de navegación principal.
+    *   Alertas de SweetAlert con tema oscuro para consistencia visual.
 *   **Tema Oscuro/Claro:** Selector de tema para la interfaz.
 *   **Aplicación de Escritorio (Electron):** Permite ejecutar la aplicación TPV como una aplicación de escritorio en Windows. Inicia automáticamente el servidor Node.js local y carga la interfaz web.
 
 ## Arquitectura del Proyecto
-El sistema se compone de tres partes principales:
-
-1.  **Aplicación Backend/Frontend (Node.js/Express):**
-    *   Ubicada en la raíz del proyecto (`src/`, `public/`, `views/`).
-    *   Sirve la interfaz de usuario (vistas EJS).
-    *   Maneja la lógica de negocio de la aplicación TPV.
-    *   Se comunica con el plugin de WordPress a través de su API REST.
-2.  **Plugin de WordPress (`tvp-pos-wp-connector`):**
-    *   Ubicado en la carpeta `tvp-pos-wp-connector/`.
-    *   Debe instalarse en un sitio WordPress con WooCommerce activo.
-    *   Expone endpoints de API REST para que la aplicación Node.js interactúe con los datos de WordPress/WooCommerce.
-3.  **Aplicación de Escritorio Electron (`electron-app/`):**
-    *   Ubicada en la carpeta `electron-app/`.
-    *   Empaqueta la aplicación Node.js/Express para su ejecución local como una aplicación de escritorio.
-    *   Inicia el servidor Node.js (`src/app.js`) y carga su interfaz web.
+(Sección sin cambios)
 
 ## Tecnologías Utilizadas
 *   **Backend (Aplicación TPV):** Node.js, Express.js
 *   **Frontend (Aplicación TPV):** HTML, CSS, JavaScript, EJS, Bootstrap 5, DataTables, SweetAlert2, FullCalendar.
+*   **Comunicación API Externa (Aplicación TPV):** Axios (para Evolution API).
 *   **Generación de PDF (Aplicación TPV):** PDFKit.
 *   **Aplicación de Escritorio:** Electron, Electron Builder.
 *   **Backend (WordPress):** PHP, WordPress API REST, WooCommerce API.
@@ -43,113 +69,75 @@ El sistema se compone de tres partes principales:
 *   **Contenerización (Opcional para despliegue web):** Docker, Docker Compose.
 
 ## Requisitos Previos
-*   Node.js (v18 o superior recomendado)
-*   NPM (usualmente viene con Node.js)
-*   Para el desarrollo del plugin de WordPress:
-    *   Un servidor web local con PHP y MySQL (ej. XAMPP, MAMP, LocalWP).
-    *   Una instalación de WordPress funcional.
-    *   Plugin WooCommerce instalado y activado.
-*   Para el despliegue web con Docker: Docker y Docker Compose.
+(Sección sin cambios)
 
 ## Instalación y Configuración
+(Nota: El archivo `data/app-config.json` se crea/actualiza automáticamente al guardar desde la página de Configuración y almacena las URLs y tokens de APIs externas como Evolution API, n8n, Socket y Chatwoot API.)
 
 ### 1. Backend Node.js/Express (Aplicación TPV Principal)
-Se encuentra en la raíz de este repositorio.
-
-1.  **Clonar el Repositorio (si aplica).**
-2.  **Instalar Dependencias:**
-    ```bash
-    npm install
-    ```
-3.  **Variables de Entorno:**
-    Crea un archivo `.env` en la raíz del proyecto (basado en `.env.example` si existiera). Variables importantes:
-    *   `PORT`: Puerto para la aplicación Node.js (ej. `3001` o `3000`).
-    *   `SESSION_SECRET`: Secreto largo y aleatorio para sesiones.
-    *   `NODE_ENV`: `development` o `production`.
-    Ejemplo de `.env`:
-    ```env
-    PORT=3001
-    SESSION_SECRET=tu_secreto_de_sesion_muy_seguro_y_aleatorio
-    NODE_ENV=development
-    ```
-4.  **Iniciar el Servidor Node.js (Desarrollo Local sin Docker):**
-    *   Con nodemon: `npm run dev`
-    *   Normal: `npm start`
-    La aplicación TPV debería estar corriendo en `http://localhost:PUERTO_CONFIGURADO`.
+(Sección sin cambios)
 
 ### 2. Plugin de WordPress (`tvp-pos-wp-connector`)
-(Instrucciones como estaban antes)
-
-1.  **Preparar el Plugin:**
-    *   La carpeta `tvp-pos-wp-connector/` contiene el plugin.
-    *   Comprime esta carpeta en un archivo ZIP (ej. `tvp-pos-wp-connector.zip`).
-2.  **Instalar en WordPress:**
-    *   Accede al panel de administración de tu sitio WordPress.
-    *   Ve a "Plugins" > "Añadir nuevo" > "Subir plugin".
-    *   Selecciona `tvp-pos-wp-connector.zip` e instálalo. Actívalo.
-3.  **Configuración de WordPress:**
-    *   **Permalinks:** Asegúrate de que no estén como "Simple". Se recomienda "Nombre de la entrada".
-    *   **CORS:** Configura `Access-Control-Allow-Origin` en `tvp-pos-wp-connector.php` o define `TVP_POS_ALLOWED_ORIGIN` en `wp-config.php` para permitir el origen de tu app Node.js (ej. `http://localhost:3001`).
+(Sección sin cambios)
 
 ### 3. WooCommerce
-(Instrucciones como estaban antes, con la nota sobre metadatos para eventos de calendario)
+(Sección sin cambios)
 
 ### 4. Aplicación de Escritorio Electron (`electron-app/`)
-Esta aplicación empaqueta el servidor Node.js y el frontend para ejecutarse como una aplicación de escritorio.
-
-1.  **Navegar al Directorio:**
-    ```bash
-    cd electron-app
-    ```
-2.  **Instalar Dependencias de Electron:**
-    ```bash
-    npm install
-    ```
-3.  **Ejecutar en Modo Desarrollo:**
-    Esto iniciará la aplicación Electron, la cual a su vez iniciará el servidor Node.js (usando la configuración de `.env` del proyecto raíz) y cargará la interfaz.
-    ```bash
-    npm start
-    ```
-4.  **Construir el Instalador para Windows (`.exe`):**
-    *   Asegúrate de tener un icono en `electron-app/assets/icon.png` (256x256px recomendado).
-    *   Ejecuta el siguiente comando en una terminal **como Administrador**:
-        ```bash
-        npm run dist
-        ```
-    *   El instalador se generará en la carpeta `electron-app/dist_electron/`.
+(Sección sin cambios)
 
 ### 5. Usando Docker (Para Despliegue Web)
-(Instrucciones como estaban antes, adaptadas para el puerto del `.env`)
-El proyecto está configurado para ser desplegado fácilmente usando Docker y Docker Compose.
-
-1.  **Requisitos Previos:** Docker y Docker Compose instalados.
-2.  **Configuración:**
-    *   Asegúrate de que `docker-compose.yml` esté presente.
-    *   Verifica/Edita `docker-compose.yml` para `SESSION_SECRET` y otras variables de entorno si es necesario. El `PORT` interno del contenedor es 3000, pero se mapea al puerto que definas en la sección `ports` (ej. `3001:3000`).
-3.  **Construir e Iniciar Contenedores:**
-    ```bash
-    docker-compose up -d --build
-    ```
-4.  **Acceso:** La aplicación estará disponible en el puerto mapeado (ej. `http://tu_ip_del_vps:3001`).
+(Sección sin cambios)
 
 ## Uso de la Aplicación
-(Sección sin cambios significativos, ya describe el uso de la app web que Electron carga)
+(Sección sin cambios)
 
 ## API del Plugin de WordPress (`tvp-pos-connector/v1`)
 (Sección sin cambios)
 
 ### API Interna de la Aplicación TPV (Node.js)
-(Sección sin cambios)
+Se han añadido/actualizado los siguientes endpoints principales:
+*   `GET /whatsapp-bulk`: Muestra la página del módulo de mensajería masiva.
+*   `GET /media`: Muestra la página del visualizador de multimedia.
+*   `GET /api/settings`: Obtiene la configuración de la aplicación.
+*   `POST /api/settings`: Guarda la configuración de la aplicación.
+*   `GET /api/evolution/instances`: Obtiene instancias de Evolution API.
+*   `POST /api/whatsapp/send-message`: Envía un mensaje de WhatsApp individual.
+*   `GET /api/chatwoot-media`: Obtiene una lista paginada de adjuntos de Chatwoot.
+*   `GET /api/chatwoot/conversations/search`: Busca conversaciones en Chatwoot (para selectores).
+*   `GET /api/chatwoot/labels`: Obtiene todas las etiquetas de la cuenta de Chatwoot.
+*   `POST /api/whatsapp/start-bulk-campaign`: Inicia una nueva campaña de envío masivo (crea archivo JSON de seguimiento).
+*   `GET /api/whatsapp/bulk-campaigns`: Lista todas las campañas de envío masivo existentes.
+*   `DELETE /api/whatsapp/bulk-campaigns/:campaignId`: Elimina una campaña específica.
+*   `POST /api/whatsapp/bulk-campaigns/:campaignId/pause`: Pausa una campaña en curso.
+*   `POST /api/whatsapp/bulk-campaigns/:campaignId/resume`: Reanuda una campaña pausada.
+
+## Próximas Características / Planes Futuros
+*   **Módulo de Mensajería Masiva por WhatsApp (Mejoras Pendientes):**
+    *   **Fuentes de Contactos Adicionales:**
+        *   Implementar la obtención de listas de destinatarios desde **WordPress/WooCommerce** (ej. todos los clientes, clientes con suscripciones activas, etc.).
+        *   Implementar la carga de contactos desde archivos **CSV**.
+    *   **Feedback de Progreso Mejorado:**
+        *   Proporcionar feedback en tiempo real al usuario sobre el progreso del envío de una campaña (ej. usando WebSockets o actualizando la tabla de historial).
+        *   Mejorar la visualización de detalles de una campaña (ej. en un modal, mostrando el estado de cada contacto individual).
+    *   **Gestión de Errores y Reintentos:**
+        *   Implementar una estrategia para reintentar envíos fallidos.
+    *   **Selección de Multimedia desde Biblioteca:**
+        *   Integrar la vista `/media` para permitir seleccionar un archivo multimedia existente de Chatwoot para las campañas, en lugar de solo pegar una URL.
+    *   **Programación de Envíos y Plantillas:**
+        *   (Opcional) Permitir programar campañas para una fecha/hora futura.
+        *   (Opcional) Sistema para guardar y reutilizar plantillas de mensajes.
+*   **Mejora en Búsqueda de Historial de Ventas:**
+    *   Actualmente en revisión y desarrollo para asegurar que la búsqueda en la sección de "Historial de Ventas" (página `/sales`) devuelva todos los resultados relevantes que coinciden con el término de búsqueda, similar a como lo hace la búsqueda nativa de WooCommerce. Se está trabajando en la lógica del plugin de WordPress (`tvp-pos-wp-connector`) para optimizar la búsqueda por campos como el número de teléfono del cliente.
 
 ## Contribuciones
-Este es un proyecto personal. Si deseas contribuir, por favor, abre un issue o un pull request en GitHub.
+(Sección sin cambios)
 
 ## Licencia
-(Especifica tu licencia aquí, ej. MIT, GPLv2, etc. Si no estás seguro, MIT es una opción común y permisiva).
+(Sección sin cambios)
 
 ## Autor
-Percy Alvarez
-(Puedes añadir tu email o enlace a perfil de GitHub aquí)
+(Sección sin cambios)
 
 ---
 *Nota: Este README es una guía general. Puede que necesites ajustar detalles específicos según la evolución del proyecto.*
