@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { emitEventToExternalSocket } from './externalSocketService.js';
 
 const CHATWOOT_CONVERSATIONS_PER_PAGE = 25;
 
@@ -106,12 +107,16 @@ export async function getChatwootMediaAttachments(baseUrl, accountId, apiToken, 
         if (attachmentsForThisConv.length > 0) {
             attachmentsForThisConv.forEach(att => {
                 if (att.data_url) {
-                    foundAttachmentsOnThisPage.push({
+                    const formattedAttachment = {
                         ...att,
                         sender_name: conv.meta?.sender?.name || 'Desconocido',
                         conversation_created_at: conv.created_at,
                         conversation_id: conv.id 
-                    });
+                    };
+                    foundAttachmentsOnThisPage.push(formattedAttachment);
+                    // Emitir evento por cada adjunto individual
+                    console.log(`[ChatwootService] Emitiendo new_media_item para adjunto ID: ${att.id}, Conv ID: ${conv.id}`);
+                    emitEventToExternalSocket('new_media_item', formattedAttachment);
                 }
             }); 
         }

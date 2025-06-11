@@ -41,33 +41,21 @@ document.addEventListener('DOMContentLoaded', function() {
     const conversationPaginationContainer = document.getElementById('conversationPaginationContainer');
     let currentConversationPage = 1;
     let dataTableInstance;
+    let socket;
 
-    async function loadConversationBatch(page = 1) {
-        // console.log(`Cargando lote de conversaciones, página: ${page}`);
-        try {
-            const response = await fetch(`/api/chatwoot-media?page=${page}`);
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: `Error al cargar multimedia: ${response.statusText}` }));
-                throw new Error(errorData.error || `Error ${response.status}`);
-            }
-            const result = await response.json();
-            // console.log(`Datos recibidos del backend para página de conversación ${page}:`, JSON.parse(JSON.stringify(result))); // Log de result
-            const attachments = result.data || [];
-            // console.log('Adjuntos para DataTables (lote actual):', JSON.parse(JSON.stringify(attachments))); // Log de attachments
-            currentConversationPage = result.currentPage || 1;
-            const totalConversationPages = result.totalPages || 0;
-
+    // Función para inicializar o añadir datos a DataTables
+    function initializeOrUpdateDataTable(attachments, initialLoad = false) {
+        if (initialLoad) {
             if (dataTableInstance) {
                 dataTableInstance.destroy();
-                mediaTableElement.find('tbody').empty(); // Limpiar cuerpo de la tabla antes de reinicializar
+                mediaTableElement.find('tbody').empty();
             }
-
+            // Colspan ajustado a 7 columnas visibles
             if (attachments.length === 0 && currentConversationPage === 1) {
-                mediaTableElement.find('tbody').html('<tr><td colspan="9" class="text-center">No se encontraron archivos multimedia en Chatwoot.</td></tr>');
-                renderConversationPagination(0, 1); // No mostrar paginación si no hay datos
+                mediaTableElement.find('tbody').html('<tr><td colspan="7" class="text-center">No se encontraron archivos multimedia en Chatwoot.</td></tr>');
+                renderConversationPagination(0, 1);
                 return;
             }
-            
             dataTableInstance = mediaTableElement.DataTable({
                 data: attachments,
                 responsive: true,
@@ -90,7 +78,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             return 'N/A';
                         }
                     },
-                    // { data: 'file_name', title: "Nombre Archivo", defaultContent: "N/A" },
                     { data: 'file_type', title: "Tipo", defaultContent: "N/A" },
                     { 
                         data: 'file_size', title: "Tamaño",
@@ -116,28 +103,52 @@ document.addEventListener('DOMContentLoaded', function() {
                     { 
                         data: 'created_at', title: "Fecha",
                         render: function(data, type, row) { return data ? new Date(data * 1000).toLocaleDateString() : 'N/A'; }
-                    },
-                    // {
-                    //     data: null, title: "Acciones", orderable: false,
-                    //     render: function(data, type, row) {
-                    //         if (row.data_url) { return `<a href="${row.data_url}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> Ver</a>`; }
-                    //         return '';
-                    //     }
-                    // }
+                    }
                 ],
-                order: [[6, 'desc']], // Ordenar por Fecha (columna 7)
-                // Deshabilitar paginación interna de DataTables si solo mostramos un lote
-                paging: true, // O false si no quieres paginación de DT para el lote actual
-                searching: true, // Habilitar búsqueda de DT para el lote actual
-                info: true // Mostrar información de DT para el lote actual
+                order: [[6, 'desc']], // Ordenar por Fecha (columna 7, ahora es la 6 por 0-index)
+                paging: true,
+                searching: true,
+                info: true
             });
+        } else if (dataTableInstance) {
+            // Si la tabla ya existe y no hay datos, limpiamos el mensaje "No se encontraron..."
+            // Colspan ajustado a 7
+            if (dataTableInstance.data().count() === 0 && mediaTableElement.find('tbody td[colspan="7"]').length > 0) {
+                dataTableInstance.clear().draw();
+            }
+            // Añadir nuevas filas y redibujar
+            dataTableInstance.rows.add(attachments).draw(false);
+        } else {
+            // Si la tabla no existe (caso borde, debería ser creada por initialLoad), la creamos.
+            initializeOrUpdateDataTable(attachments, true);
+        }
+    }
 
+    async function loadConversationBatch(page = 1) {
+        // console.log(`Cargando lote de conversaciones, página: ${page}`);
+        try {
+            const response = await fetch(`/api/chatwoot-media?page=${page}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: `Error al cargar multimedia: ${response.statusText}` }));
+                throw new Error(errorData.error || `Error ${response.status}`);
+            }
+            const result = await response.json();
+            // console.log(`Datos recibidos del backend para página de conversación ${page}:`, JSON.parse(JSON.stringify(result))); // Log de result
+            const attachments = result.data || [];
+            currentConversationPage = result.currentPage || 1;
+            const totalConversationPages = result.totalPages || 0;
+
+            initializeOrUpdateDataTable(attachments, true); // Carga inicial para el lote
             renderConversationPagination(totalConversationPages, currentConversationPage);
 
         } catch (error) {
             console.error('Error al cargar multimedia de Chatwoot:', error);
-            if (dataTableInstance) dataTableInstance.destroy();
-            mediaTableElement.find('tbody').html(`<tr><td colspan="9" class="text-center text-danger">Error: ${error.message}</td></tr>`);
+            if (dataTableInstance) {
+                dataTableInstance.destroy();
+                mediaTableElement.find('tbody').empty();
+            }
+            // Colspan ajustado a 7
+            mediaTableElement.find('tbody').html(`<tr><td colspan="7" class="text-center text-danger">Error: ${error.message}</td></tr>`);
             renderConversationPagination(0,1);
         }
     }
@@ -186,6 +197,64 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     loadConversationBatch(currentConversationPage);
+
+    function setupSocketIO() {
+        // La URL del socket se obtiene de la configuración guardada en data/app-config.json
+        // El footer.ejs ya incluye el script de socket.io.js desde la URL configurada
+        // Conectamos a la URL base del servidor de sockets.
+        socket = io.connect('https://socket.percyalvarez.com', { 
+            // Opciones de conexión si son necesarias, por ejemplo, si el servidor usa un path específico:
+            // path: '/socket.io' 
+            // Considerar 'reconnectionAttempts' o 'transports' si hay problemas de conexión persistentes.
+        });
+
+        socket.on('connect', () => {
+            console.log('Conectado al servidor de Socket.IO para multimedia.');
+            // Unirse a la sala configurada en app-config.json (asumiendo que es 'pos-tvp-2025')
+            // El servidor socket.percyalvarez.com debe estar configurado para manejar esta sala.
+            const roomToJoin = 'pos-tvp-2025'; // Podríamos obtener esto de la config si estuviera disponible en el frontend
+            socket.emit('join_room', { roomName: roomToJoin }); 
+            console.log(`Intentando unirse a la sala: ${roomToJoin} con el formato { roomName: "${roomToJoin}" }`);
+        });
+
+        // Escuchar el evento que envía nuevos items multimedia.
+        // El nombre del evento 'new_media_item' es una suposición basada en el README.
+        // Debe coincidir exactamente con el evento emitido por `externalSocketService.js`.
+        socket.on('new_media_item', (mediaItem) => {
+            console.log('Nuevo item multimedia recibido vía Socket.IO:', mediaItem);
+            if (mediaItem) {
+                const itemsToAdd = Array.isArray(mediaItem) ? mediaItem : [mediaItem];
+                initializeOrUpdateDataTable(itemsToAdd, false); // Añadir sin recargar toda la tabla
+            }
+        });
+        
+        // El README menciona que chatwootApiService emite eventos de WebSockets durante la carga de multimedia.
+        // Es posible que el evento sea 'chatwoot_media_progress' o similar.
+        socket.on('chatwoot_media_progress', (progressData) => {
+            console.log('Progreso de carga multimedia Chatwoot (evento chatwoot_media_progress):', progressData);
+            // Si este evento también contiene el item multimedia nuevo:
+            if (progressData && progressData.newItem) { 
+                 console.log('Nuevo item multimedia (desde chatwoot_media_progress) recibido vía Socket.IO:', progressData.newItem);
+                 const itemsToAdd = Array.isArray(progressData.newItem) ? progressData.newItem : [progressData.newItem];
+                 initializeOrUpdateDataTable(itemsToAdd, false);
+            }
+            // Aquí también se podría actualizar un indicador de progreso en la UI si se desea.
+            // ej: $('#media-loading-progress').text(`Página ${progressData.page}/${progressData.totalPages} procesada. ${progressData.newItemsFoundThisPage} nuevos.`);
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log('Desconectado del servidor de Socket.IO:', reason);
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('Error de conexión con Socket.IO:', error);
+        });
+
+        // Considerar manejar 'reconnect_attempt', 'reconnect', 'reconnect_error', 'reconnect_failed'
+        // para dar feedback al usuario sobre el estado de la conexión.
+    }
+
+    setupSocketIO(); // Configurar Socket.IO después de la carga inicial
 });
 </script>
 <style>
